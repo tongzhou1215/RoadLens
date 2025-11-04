@@ -20,54 +20,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cs407.roadlens.viewmodel.ClipKind
+import com.cs407.roadlens.viewmodel.ClipUploadStatus
+import com.cs407.roadlens.viewmodel.RecordingClip
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
-// --- UI entry point ---
 @Composable
 fun AlbumScreen(
-    onBack: () -> Unit = {}
+    clips: List<RecordingClip>,
+    onBack: () -> Unit = {},
+    onDeleteClips: (Set<Long>) -> Unit = {}
 ) {
-    // selection mode + selections
     var selectionMode by remember { mutableStateOf(false) }
-    val selected = remember { mutableStateListOf<String>() }
-
-    // sample list (replace with real data later)
-    val clips = remember {
-        listOf(
-            ClipItem(
-                id = "1",
-                title = "CRITICAL: Auto-Saved Crash",
-                dateLine = "Oct 10, 2025 | 14:32 | 35s",
-                status = "Not Backed Up",
-                kind = ClipKind.CRITICAL
-            ),
-            ClipItem(
-                id = "2",
-                title = "Manual Recording",
-                dateLine = "Oct 10, 2025 | 09:12 | 1m 20s",
-                status = "Local",
-                kind = ClipKind.MANUAL
-            ),
-            ClipItem(
-                id = "3",
-                title = "Manual Recording",
-                dateLine = "Oct 07, 2025 | 18:44 | 5m 0s",
-                status = "Local",
-                kind = ClipKind.MANUAL
-            )
-        )
-    }
-
-    // search text (visual only for now)
+    val selected = remember { mutableStateListOf<Long>() }
     var query by remember { mutableStateOf("") }
 
-    // layout
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
             .navigationBarsPadding()
     ) {
-        // Top bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -85,11 +60,10 @@ fun AlbumScreen(
             )
         }
 
-        // Search
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("Search by date, type, or tag...") },
+            placeholder = { Text("Search by file name...") },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -97,39 +71,45 @@ fun AlbumScreen(
             shape = RoundedCornerShape(14.dp)
         )
 
-        // List
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(clips, key = { it.id }) { clip ->
-                val isSelected = clip.id in selected
-                AlbumCard(
-                    item = clip,
-                    selected = isSelected,
-                    selectionMode = selectionMode,
-                    onClick = {
-                        if (selectionMode) {
-                            if (isSelected) selected.remove(clip.id) else selected.add(clip.id)
-                        }
-                    }
-                )
-            }
-
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 16.dp),
-                    contentAlignment = Alignment.Center
-                ) { Text("... Scroll for more clips ...", color = Color.Gray) }
+        val filtered = remember(clips, query) {
+            if (query.isBlank()) clips else clips.filter { clip ->
+                clip.fileName.contains(query, ignoreCase = true)
             }
         }
 
-        // Bottom actions
+        if (filtered.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No clips saved yet. Start a recording to see it here.", color = Color.Gray)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+                contentPadding = PaddingValues(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(filtered, key = { it.id }) { clip ->
+                    val isSelected = clip.id in selected
+                    AlbumCard(
+                        item = clip,
+                        selected = isSelected,
+                        selectionMode = selectionMode,
+                        onClick = {
+                            if (selectionMode) {
+                                if (isSelected) selected.remove(clip.id) else selected.add(clip.id)
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
         BottomActions(
             selectionMode = selectionMode,
             hasSelection = selected.isNotEmpty(),
@@ -137,24 +117,25 @@ fun AlbumScreen(
                 selectionMode = !selectionMode
                 if (!selectionMode) selected.clear()
             },
-            onUpload = { /* requires selection; disabled until allowed */ },
-            onDelete = { /* requires selection; disabled until allowed */ }
+            onDelete = {
+                onDeleteClips(selected.toSet())
+                selectionMode = false
+                selected.clear()
+            }
         )
     }
 }
 
-// --- Components ---
-
 @Composable
 private fun AlbumCard(
-    item: ClipItem,
+    item: RecordingClip,
     selected: Boolean,
     selectionMode: Boolean,
     onClick: () -> Unit
 ) {
     val (borderColor, badgeBg, titleColor, statusColor) = when (item.kind) {
-        ClipKind.CRITICAL -> Quadruple(Color(0xFFFF6B6B), Color(0xFFFFEFEF), Color(0xFFB00020), Color(0xFFB00020))
-        ClipKind.MANUAL -> Quadruple(Color(0xFF22C55E), Color(0xFFEFFBF3), Color(0xFF0F5132), Color(0xFF0F5132))
+        ClipKind.LOOP -> Quadruple(Color(0xFF22C55E), Color(0xFFEFFBF3), Color(0xFF0F5132), Color(0xFF0F5132))
+        ClipKind.MANUAL -> Quadruple(Color(0xFFFFB74D), Color(0xFFFFF4E5), Color(0xFFB76E00), Color(0xFFB76E00))
     }
 
     val stroke = if (selected) BorderStroke(2.dp, Color(0xFF3B82F6)) else BorderStroke(1.dp, borderColor.copy(alpha = 0.5f))
@@ -163,7 +144,7 @@ private fun AlbumCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() },
+            .clickable { if (selectionMode) onClick() },
         shape = RoundedCornerShape(16.dp),
         color = badgeBg,
         tonalElevation = if (selected) 4.dp else 1.dp,
@@ -181,7 +162,10 @@ private fun AlbumCard(
                     .padding(end = 8.dp)
             ) {
                 Text(
-                    text = item.title,
+                    text = when (item.kind) {
+                        ClipKind.LOOP -> "Loop Recording"
+                        ClipKind.MANUAL -> "Manual Recording"
+                    },
                     fontWeight = FontWeight.SemiBold,
                     color = titleColor,
                     fontSize = 16.sp,
@@ -189,16 +173,15 @@ private fun AlbumCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
-                Text(text = item.dateLine, color = Color.DarkGray, fontSize = 13.sp)
+                Text(text = buildDateLine(item), color = Color.DarkGray, fontSize = 13.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Status: ${item.status}",
+                    text = "Status: ${statusLabel(item.uploadStatus)}",
                     color = statusColor,
                     fontSize = 13.sp
                 )
             }
 
-            // trailing chevron (visual)
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
@@ -213,11 +196,9 @@ private fun BottomActions(
     selectionMode: Boolean,
     hasSelection: Boolean,
     onToggleSelection: () -> Unit,
-    onUpload: () -> Unit,
     onDelete: () -> Unit
 ) {
-    // upload/delete only enabled when selection mode ON and something selected
-    val canAct = selectionMode && hasSelection
+    val canDelete = selectionMode && hasSelection
 
     Surface(
         color = Color(0xFFF6F6F8),
@@ -230,25 +211,15 @@ private fun BottomActions(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Upload
-            FilledTonalButton(
-                onClick = onUpload,
-                enabled = canAct,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(14.dp)
-            ) { Text("Upload to Cloud") }
-
-            // Select toggle
             OutlinedButton(
                 onClick = onToggleSelection,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(14.dp)
             ) { Text(if (selectionMode) "Cancel" else "Select") }
 
-            // Delete
             Button(
                 onClick = onDelete,
-                enabled = canAct,
+                enabled = canDelete,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF87171))
@@ -257,21 +228,35 @@ private fun BottomActions(
     }
 }
 
-// --- Models (UI-only placeholder) ---
+private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component1() = a
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component2() = b
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component3() = c
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component4() = d
 
-private enum class ClipKind { CRITICAL, MANUAL }
+private fun buildDateLine(clip: RecordingClip): String {
+    val instant = Instant.ofEpochMilli(clip.recordedAt)
+    val zoned = instant.atZone(ZoneId.systemDefault())
+    val datePart = DATE_FORMATTER.format(zoned)
+    val timePart = TIME_FORMATTER.format(zoned)
+    val durationPart = formatDuration(clip.durationSeconds)
+    return "$datePart | $timePart | $durationPart"
+}
 
-private data class ClipItem(
-    val id: String,
-    val title: String,
-    val dateLine: String,
-    val status: String,
-    val kind: ClipKind
-)
+private fun formatDuration(totalSeconds: Int): String {
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return if (minutes > 0) {
+        String.format("%dm %02ds", minutes, seconds)
+    } else {
+        String.format("%ds", seconds)
+    }
+}
 
-// Small tuple helper
-private data class Quadruple<A,B,C,D>(val a:A,val b:B,val c:C,val d:D)
-private operator fun <A,B,C,D> Quadruple<A,B,C,D>.component1() = a
-private operator fun <A,B,C,D> Quadruple<A,B,C,D>.component2() = b
-private operator fun <A,B,C,D> Quadruple<A,B,C,D>.component3() = c
-private operator fun <A,B,C,D> Quadruple<A,B,C,D>.component4() = d
+private fun statusLabel(status: ClipUploadStatus): String = when (status) {
+    ClipUploadStatus.LOCAL_ONLY -> "Local Only"
+    ClipUploadStatus.SYNCED -> "Backed Up"
+}
+
+private val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy")
+private val TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")

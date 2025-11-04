@@ -8,124 +8,164 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cs407.roadlens.viewmodel.AppSettings
 
-/**
- * Settings screen (UI only, no KeyboardOptions).
- * - Back arrow (top-left)
- * - Toggles for Camera/GPS
- * - Crash sensitivity slider (Low..High)
- * - Loop duration dropdown
- * - Save GPS toggle
- * - Emergency contact text field (plain)
- * - Bottom fixed "Save Changes" button
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    currentSettings: AppSettings,
     onBack: () -> Unit = {},
-    onSave: (SettingsUiState) -> Unit = {}
+    onSave: (AppSettings) -> Unit = {}
 ) {
-    // ---- Local UI state (temporary form values) ----
-    var grantCamera by remember { mutableStateOf(false) }
-    var grantLocation by remember { mutableStateOf(false) }
-    var saveGps by remember { mutableStateOf(false) }
+    // ---- Local UI state ----
+    var grantCamera by rememberSaveable { mutableStateOf(currentSettings.cameraGranted) }
+    var grantLocation by rememberSaveable { mutableStateOf(currentSettings.locationGranted) }
+    var saveGps by rememberSaveable { mutableStateOf(currentSettings.saveGps) }
+    var crashSensitivity by rememberSaveable { mutableFloatStateOf(currentSettings.crashSensitivity) } // 0f..1f
 
-    var crashSensitivity by remember { mutableFloatStateOf(0.25f) } // 0f..1f
-
-    val durationOptions = listOf("30 Seconds", "1 Minute", "3 Minutes", "5 Minutes")
-    var loopDuration by remember { mutableStateOf(durationOptions[1]) }
+    val baseDurationOptions = listOf("30 Seconds", "1 Minute", "3 Minutes", "5 Minutes")
+    val durationOptions = remember(currentSettings.loopDuration) {
+        if (currentSettings.loopDuration in baseDurationOptions) baseDurationOptions
+        else baseDurationOptions + currentSettings.loopDuration
+    }
+    var loopDuration by rememberSaveable {
+        mutableStateOf(
+            currentSettings.loopDuration.takeIf { it.isNotBlank() } ?: baseDurationOptions[1]
+        )
+    }
     var durationExpanded by remember { mutableStateOf(false) }
 
-    var emergencyContact by remember { mutableStateOf("") } // plain text field, no KeyboardOptions
+    var emergencyContact by rememberSaveable { mutableStateOf(currentSettings.emergencyContact) }
 
-    // ---- Layout ----
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White)
-            .navigationBarsPadding()
-    ) {
-        // Top bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp, start = 4.dp, end = 16.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Text(
-                text = "App Settings",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier.padding(start = 4.dp)
+    // 如果外部 currentSettings 变化，同步表单
+    LaunchedEffect(currentSettings) {
+        grantCamera = currentSettings.cameraGranted
+        grantLocation = currentSettings.locationGranted
+        saveGps = currentSettings.saveGps
+        crashSensitivity = currentSettings.crashSensitivity
+        loopDuration = currentSettings.loopDuration.takeIf { it in durationOptions } ?: durationOptions.first()
+        emergencyContact = currentSettings.emergencyContact
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("App Settings") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    TextButton(
+                        onClick = {
+                            onSave(
+                                AppSettings(
+                                    cameraGranted = grantCamera,
+                                    locationGranted = grantLocation,
+                                    saveGps = saveGps,
+                                    loopDuration = loopDuration,
+                                    crashSensitivity = crashSensitivity,
+                                    emergencyContact = emergencyContact
+                                )
+                            )
+                        }
+                    ) { Text("Save") }
+                }
             )
+        },
+        bottomBar = {
+            Surface(color = Color(0xFFF6F6F8), shadowElevation = 6.dp) {
+                Button(
+                    onClick = {
+                        onSave(
+                            AppSettings(
+                                cameraGranted = grantCamera,
+                                locationGranted = grantLocation,
+                                saveGps = saveGps,
+                                loopDuration = loopDuration,
+                                crashSensitivity = crashSensitivity,
+                                emergencyContact = emergencyContact
+                            )
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Save Changes")
+                }
+            }
         }
-
-        // Scrollable content
+    ) { inner ->
         LazyColumn(
             modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
+                .fillMaxSize()
+                .background(Color.White)
+                .padding(inner)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Camera toggle
+            // Camera
             item {
                 SettingCard {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Grant Camera Access", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Checkbox(checked = grantCamera, onCheckedChange = { grantCamera = it })
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Camera Permission", fontSize = 16.sp)
+                            Text("Allow camera access for recording", color = Color.Gray, fontSize = 12.sp)
+                        }
+                        Switch(checked = grantCamera, onCheckedChange = { grantCamera = it })
                     }
                 }
             }
 
-            // Location toggle
+            // Location
             item {
                 SettingCard {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Grant Location (GPS) Access", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Checkbox(checked = grantLocation, onCheckedChange = { grantLocation = it })
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Location Permission", fontSize = 16.sp)
+                            Text("Allow location access for GPS tagging", color = Color.Gray, fontSize = 12.sp)
+                        }
+                        Switch(checked = grantLocation, onCheckedChange = { grantLocation = it })
                     }
                 }
             }
 
-            // Crash sensitivity
+            // Save GPS
             item {
                 SettingCard {
-                    Text("Crash Sensitivity", fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "based on the change of speed",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Slider(
-                        value = crashSensitivity,
-                        onValueChange = { crashSensitivity = it },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Low", style = MaterialTheme.typography.bodySmall)
-                        Text("High", style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Save GPS with Clips", fontSize = 16.sp)
+                            Text("Attach GPS coordinates to saved clips", color = Color.Gray, fontSize = 12.sp)
+                        }
+                        Switch(checked = saveGps, onCheckedChange = { saveGps = it })
                     }
                 }
             }
 
-            // Loop duration dropdown
+            // Loop Duration (dropdown)
             item {
                 SettingCard {
-                    Text("Loop Clip Duration", fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
-
+                    Text("Loop Duration", fontSize = 16.sp)
+                    Spacer(Modifier.height(6.dp))
                     ExposedDropdownMenuBox(
                         expanded = durationExpanded,
                         onExpandedChange = { durationExpanded = !durationExpanded }
@@ -134,21 +174,20 @@ fun SettingsScreen(
                             value = loopDuration,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Duration") },
                             modifier = Modifier
                                 .menuAnchor()
                                 .fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = durationExpanded) }
                         )
                         ExposedDropdownMenu(
                             expanded = durationExpanded,
                             onDismissRequest = { durationExpanded = false }
                         ) {
-                            durationOptions.forEach { option ->
+                            durationOptions.forEach { opt ->
                                 DropdownMenuItem(
-                                    text = { Text(option) },
+                                    text = { Text(opt) },
                                     onClick = {
-                                        loopDuration = option
+                                        loopDuration = opt
                                         durationExpanded = false
                                     }
                                 )
@@ -158,83 +197,53 @@ fun SettingsScreen(
                 }
             }
 
-            // Save GPS toggle
+            // Crash Sensitivity (slider)
             item {
                 SettingCard {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Save GPS Location", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Checkbox(checked = saveGps, onCheckedChange = { saveGps = it })
+                    Text("Crash Sensitivity", fontSize = 16.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Slider(
+                        value = crashSensitivity,
+                        onValueChange = { crashSensitivity = it },
+                        valueRange = 0f..1f
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Low", color = Color.Gray, fontSize = 12.sp)
+                        Text(String.format("%.2f", crashSensitivity), color = Color.Gray, fontSize = 12.sp)
+                        Text("High", color = Color.Gray, fontSize = 12.sp)
                     }
                 }
             }
 
-            // Emergency contact (plain OutlinedTextField, no KeyboardOptions)
+            // Emergency Contact
             item {
                 SettingCard {
-                    Text("Emergency Contact", fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
+                    Text("Emergency Contact", fontSize = 16.sp)
+                    Spacer(Modifier.height(6.dp))
                     OutlinedTextField(
                         value = emergencyContact,
                         onValueChange = { emergencyContact = it },
-                        placeholder = { Text("0000000000") },
+                        placeholder = { Text("Phone / Name (optional)") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
-        }
 
-        // Bottom fixed Save button
-        Surface(color = Color.White, tonalElevation = 2.dp) {
-            Button(
-                onClick = {
-                    onSave(
-                        SettingsUiState(
-                            grantCamera = grantCamera,
-                            grantLocation = grantLocation,
-                            crashSensitivity = crashSensitivity,
-                            loopDuration = loopDuration,
-                            saveGps = saveGps,
-                            emergencyContact = emergencyContact
-                        )
-                    )
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .height(50.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFF7A00),
-                    contentColor = Color.White
-                )
-            ) {
-                Text("Save Changes", fontWeight = FontWeight.SemiBold)
-            }
+            item { Spacer(Modifier.height(64.dp)) } // 给底部按钮留空间
         }
     }
 }
 
-/** Reusable card look for each settings block. */
 @Composable
 private fun SettingCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        tonalElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface
+        color = Color(0xFFF7F7FA),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) { content() }
+        Column(modifier = Modifier.padding(16.dp), content = content)
     }
 }
-
-/** UI state passed back to caller when Save is pressed. */
-data class SettingsUiState(
-    val grantCamera: Boolean,
-    val grantLocation: Boolean,
-    val crashSensitivity: Float,
-    val loopDuration: String,
-    val saveGps: Boolean,
-    val emergencyContact: String
-)
