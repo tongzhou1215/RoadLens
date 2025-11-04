@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "roadLens"
+rootProject.name = "RoadLens"
 include(":app")
  
