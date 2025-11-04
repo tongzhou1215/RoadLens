@@ -1,4 +1,4 @@
-package com.cs407.roadlens.feature.home
+package com.cs407.roadlens.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,55 +14,59 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    onViewAlbum: () -> Unit = {},  // <-- for navigation
+    onStartRecording: () -> Unit = {},  // placeholder for future
+    onSettings: () -> Unit = {},         // placeholder for future
+    cameraGranted: Boolean
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
     ) {
-
-        // ---- Main area (fills all space above the bottom bar) ----
+        // --- Top section (title area) ---
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .background(Color(0xFFF4F2F7))        // light background
-                .padding(horizontal = 32.dp, vertical = 100.dp),
+                .background(Color(0xFFF4F2F7))
+                .padding(horizontal = 32.dp, vertical = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Move title down a little
-            Spacer(Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
-            // Title + subtitle
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "Roadlens",
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color(0xFF16A34A),
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    text = "Mobile Dashcam & Accident Reporter",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
-                    textAlign = TextAlign.Center
-                )
-            }
+            // App title
+            Text(
+                text = "Roadlens",
+                fontSize = 36.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFF16A34A),
+                textAlign = TextAlign.Center
+            )
 
-            // Push buttons to the vertical middle
-            Spacer(Modifier.weight(1f))
+            // Subtitle
+            Text(
+                text = "Mobile Dashcam & Accident Reporter",
+                fontSize = 14.sp,
+                color = Color.Gray,
+                modifier = Modifier.padding(top = 6.dp),
+                textAlign = TextAlign.Center
+            )
 
-            // Buttons block (centered vertically)
+            Spacer(modifier = Modifier.weight(1f))
+
+            // --- Buttons ---
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Start Recording
                 Button(
-                    onClick = { },
+                    onClick = onStartRecording,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -71,30 +75,37 @@ fun HomeScreen() {
                         containerColor = Color(0xFF16A34A),
                         contentColor = Color.White
                     )
-                ) { Text("Start Recording", fontWeight = FontWeight.Bold) }
+                ) {
+                    Text("Start Recording", fontWeight = FontWeight.Bold)
+                }
 
+                // View Album
                 FilledTonalButton(
-                    onClick = { },
+                    onClick = onViewAlbum,  // <-- Navigates to AlbumScreen
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
                     shape = RoundedCornerShape(14.dp)
-                ) { Text("View Album", fontWeight = FontWeight.Medium) }
+                ) {
+                    Text("View Album", fontWeight = FontWeight.Medium)
+                }
 
+                // Settings
                 FilledTonalButton(
-                    onClick = { },
+                    onClick = onSettings,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
                     shape = RoundedCornerShape(14.dp)
-                ) { Text("Settings", fontWeight = FontWeight.Medium) }
+                ) {
+                    Text("Settings", fontWeight = FontWeight.Medium)
+                }
             }
 
-            // Balance space below buttons to keep them centered
-            Spacer(Modifier.weight(1f))
+            Spacer(modifier = Modifier.weight(1f))
         }
 
-        // ---- Bottom status bar ----
+        // --- Bottom status bar ---
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -103,7 +114,7 @@ fun HomeScreen() {
             colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F2F7))
         ) {
             Row(
-                Modifier
+                modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,

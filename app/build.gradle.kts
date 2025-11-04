@@ -56,4 +56,37 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+
+    // --- Compose BOM (ensures all versions match) ---
+    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+
+    // --- Core Compose UI ---
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+
+    // --- Material 3 Components ---
+    implementation("androidx.compose.material3:material3")
+
+    // --- Text Input (KeyboardOptions / KeyboardType) ---
+    implementation("androidx.compose.ui:ui-text")
+
+    // --- Material Icons (for ArrowBack, etc.) ---
+    implementation("androidx.compose.material:material-icons-extended")
+
+    // --- Lifecycle + ViewModel for Compose ---
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
+
+    // --- Navigation (for NavPage.kt) ---
+    implementation("androidx.navigation:navigation-compose:2.8.3")
+
+    // --- Kotlin coroutines (used in RecordingScreen timer) ---
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // --- Optional but recommended for development tools ---
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

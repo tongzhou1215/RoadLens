@@ -3,19 +3,18 @@ package com.cs407.roadlens
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.MaterialTheme
-import com.cs407.roadlens.feature.home.HomeScreen
+import androidx.navigation.compose.rememberNavController
+import com.cs407.roadlens.navigation.NavPage
+import com.cs407.roadlens.ui.theme.RoadLensTheme   // <-- use this import
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContent {
-            MaterialTheme {
-                HomeScreen()
+            RoadLensTheme {                      // <-- wrap your UI with this
+                val navController = rememberNavController()
+                NavPage(navController)            // Home ↔ Album works here
             }
         }
-
     }
 }
