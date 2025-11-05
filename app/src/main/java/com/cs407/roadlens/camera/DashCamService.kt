@@ -18,8 +18,10 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.os.postDelayed
 import androidx.lifecycle.LifecycleService
-import java.util.logging.Handler
+import android.os.Handler
+import android.widget.Toast
 
 object DashCamActions {
     const val ACTION_PREPARE = "dc.PREPARE"
@@ -30,13 +32,10 @@ object DashCamActions {
     const val EXTRA_AUDIO    = "with_audio"
 }
 
-@AndroidEntryPoint
 class DashCamService : LifecycleService() {
-
     private lateinit var cameraProvider: ProcessCameraProvider
     private var videoCapture: VideoCapture<Recorder>? = null
     private var currentRecording: Recording? = null
-
     private var segMinutes = 3       // default; updated from ACTION_START/UPDATE
     private var withAudio = false
 
@@ -87,6 +86,13 @@ class DashCamService : LifecycleService() {
         // If already recording, ignore or restart
         if (currentRecording != null) return
         startNextSegment()
+    }
+
+
+    private fun showToast(msg: String) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun startNextSegment() {
@@ -159,4 +165,3 @@ class DashCamService : LifecycleService() {
     private fun mainHandler() = Handler(Looper.getMainLooper())
 }
 
-}

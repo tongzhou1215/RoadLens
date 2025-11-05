@@ -1,47 +1,62 @@
 package com.cs407.roadlens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.navigation.compose.rememberNavController
 import com.cs407.roadlens.ui.theme.RoadLensTheme
+import com.cs407.roadlens.navigation.NavPage
 
 class MainActivity : ComponentActivity() {
+
+    // Adjust this list if you also capture audio, etc.
+    private val basePermissions = arrayOf(
+        Manifest.permission.CAMERA
+    )
+
+    private val requestPermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grantMap ->
+            val allGranted = grantMap.values.all { it }
+            if (!allGranted) {
+                Toast.makeText(this, "Camera permission is required", Toast.LENGTH_LONG).show()
+            }
+            // Continue to UI regardless; screens can react to missing perms.
+            renderUi()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        // Request POST_NOTIFICATIONS on 13+ if you use a ForegroundService with a notification.
+        val perms = buildList {
+            addAll(basePermissions)
+            if (Build.VERSION.SDK_INT >= 33) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }.toTypedArray()
+
+        if (perms.all { hasPermission(it) }) {
+            renderUi()
+        } else {
+            requestPermissions.launch(perms)
+        }
+    }
+
+    private fun renderUi() {
         setContent {
             RoadLensTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                val navController = rememberNavController()
+                NavPage(navController = navController)
             }
         }
     }
-}
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    RoadLensTheme {
-        Greeting("Android")
-    }
+    private fun hasPermission(p: String): Boolean =
+        ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
 }
