@@ -20,6 +20,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Intent
+import androidx.core.content.ContextCompat.startForegroundService
+import com.cs407.roadlens.camera.DashCamActions
+import com.cs407.roadlens.camera.DashCamService
 
 // Global App Settings
 data class AppSettings(
@@ -30,6 +34,30 @@ data class AppSettings(
     val crashSensitivity: Float = 0.25f,
     val emergencyContact: String = ""
 )
+
+private fun dashcamPrepare(context: Context) {
+    startForegroundService(
+        context,
+        Intent(context, DashCamService::class.java).setAction(DashCamActions.ACTION_PREPARE)
+    )
+}
+
+private fun dashcamStart(context: Context, segMinutes: Int, withAudio: Boolean) {
+    dashcamPrepare(context) // safe to call repeatedly
+    startForegroundService(
+        context,
+        Intent(context, DashCamService::class.java)
+            .setAction(DashCamActions.ACTION_START)
+            .putExtra(DashCamActions.EXTRA_SEG_MIN, segMinutes)
+            .putExtra(DashCamActions.EXTRA_AUDIO, withAudio)
+    )
+}
+
+private fun dashcamStop(context: Context) {
+    context.startService(
+        Intent(context, DashCamService::class.java).setAction(DashCamActions.ACTION_STOP)
+    )
+}
 
 class ViewModel : androidx.lifecycle.ViewModel() {
     var settings by mutableStateOf(AppSettings())
@@ -73,6 +101,13 @@ class ViewModel : androidx.lifecycle.ViewModel() {
 
     fun startRecording(context: Context) {
         if (_recordingState.value.isRecording) return
+
+        // Kick off the foreground service recording
+        val segMinutes = parseLoopDuration(settings.loopDuration) / 60
+        val useAudio = settings.cameraGranted /* plus your mic-permission flag if you track it */
+        dashcamStart(context.applicationContext, segMinutes = max(segMinutes, 1), withAudio = useAudio)
+
+        // --- your existing UI state timer logic below ---
         val targetSeconds = parseLoopDuration(settings.loopDuration)
         val startTimestamp = System.currentTimeMillis()
         currentStartTimestamp = startTimestamp
@@ -83,7 +118,7 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             targetDurationSeconds = targetSeconds,
             autoStopped = false
         )
-
+        // keep your Job/loop exactly as you had it…
         recordingJob?.cancel()
         recordingJob = viewModelScope.launch {
             while (true) {
@@ -95,14 +130,9 @@ class ViewModel : androidx.lifecycle.ViewModel() {
                 _recordingState.value = updatedState
 
                 if (updatedElapsed >= updatedState.targetDurationSeconds) {
-                    recordingContext?.let { ctx ->
-                        stopRecording(ctx, RecordingStopReason.AUTO)
-                    } ?: run {
-                        _recordingState.value = updatedState.copy(
-                            isRecording = false,
-                            autoStopped = true
-                        )
-                    }
+                    // Stop service clip when auto limit reached
+                    dashcamStop(context.applicationContext)
+                    stopRecording(context, RecordingStopReason.AUTO)
                     break
                 }
             }
@@ -110,12 +140,15 @@ class ViewModel : androidx.lifecycle.ViewModel() {
     }
 
     fun stopRecording(context: Context, reason: RecordingStopReason) {
-        val current = _recordingState.value
-        if (!current.isRecording) return
+        if (!_recordingState.value.isRecording) return
 
+        // Tell the service to stop the current segment (and break the loop)
+        dashcamStop(context.applicationContext)
+
+        // --- keep your existing state persistence logic below ---
         recordingJob?.cancel()
         recordingJob = null
-
+        val current = _recordingState.value
         val elapsed = max(current.elapsedSeconds, 1)
         val startedAt = currentStartTimestamp ?: System.currentTimeMillis()
         val clipKind = if (reason == RecordingStopReason.MANUAL_CLIP) ClipKind.MANUAL else ClipKind.LOOP
@@ -126,7 +159,6 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             autoStopped = reason == RecordingStopReason.AUTO,
             lastSavedClipKind = clipKind
         )
-
         val clip = RecordingClip(
             id = startedAt,
             fileName = "clip-$startedAt.mp4",
@@ -135,14 +167,11 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             kind = clipKind,
             uploadStatus = ClipUploadStatus.SYNCED
         )
-
         currentStartTimestamp = null
         recordingContext = null
-
-        viewModelScope.launch {
-            addClipInternal(context.applicationContext, clip)
-        }
+        viewModelScope.launch { addClipInternal(context.applicationContext, clip) }
     }
+
 
     fun manualClip(context: Context) {
         stopRecording(context, RecordingStopReason.MANUAL_CLIP)

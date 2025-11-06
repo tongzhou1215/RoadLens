@@ -1,48 +1,44 @@
 package com.cs407.roadlens.navigation
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.*
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.cs407.roadlens.ui.screen.HomeScreen
 import com.cs407.roadlens.ui.screen.AlbumScreen
-import com.cs407.roadlens.ui.screen.RecordingScreen
+import com.cs407.roadlens.ui.screen.HomeScreen
+import com.cs407.roadlens.ui.screen.RecordingRoute
 import com.cs407.roadlens.ui.screen.SettingsScreen
 import com.cs407.roadlens.viewmodel.AppSettings
-import com.cs407.roadlens.viewmodel.RecordingStopReason
-import com.cs407.roadlens.viewmodel.ViewModel as AppVM
+import com.cs407.roadlens.viewmodel.RecordingClip
+import com.cs407.roadlens.viewmodel.ClipKind
+import com.cs407.roadlens.viewmodel.ClipUploadStatus
 
-/**
- * Navigation graph for Home / Album / Recording / Settings.
- * Uses AppSettings as the SettingsScreen save payload (no SettingsUiState).
- */
 @Composable
 fun NavPage(navController: NavHostController) {
-    val appVm: AppVM = viewModel()
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        appVm.ensureInitialized(context)
+    // Minimal, in-graph state so the app renders without a factory/ViewModel.
+    var settings by remember {
+        mutableStateOf(
+            AppSettings(
+                cameraGranted = false,
+                locationGranted = false,
+                saveGps = true,
+                loopDuration = "1 Minute",
+                crashSensitivity = 0.5f,
+                emergencyContact = ""
+            )
+        )
     }
 
-    val recordingState by appVm.recordingState.collectAsState()
-    val clips by appVm.clips.collectAsState()
+    // Example empty album list (structure matches your AlbumScreen)
+    var clips by remember { mutableStateOf<List<RecordingClip>>(emptyList()) }
 
-    NavHost(
-        navController = navController,
-        startDestination = "home"
-    ) {
-        // HOME
+    NavHost(navController = navController, startDestination = "home") {
+
         composable("home") {
             HomeScreen(
-                cameraGranted = appVm.settings.cameraGranted,
+                cameraGranted = settings.cameraGranted,
                 onStartRecording = {
-                    if (appVm.settings.cameraGranted) {
+                    if (settings.cameraGranted) {
                         navController.navigate("recording")
                     } else {
                         navController.navigate("settings")
@@ -53,52 +49,29 @@ fun NavPage(navController: NavHostController) {
             )
         }
 
-        // ALBUM
+        composable("recording") {
+            RecordingRoute()
+        }
+
         composable("album") {
             AlbumScreen(
                 clips = clips,
                 onBack = { navController.popBackStack() },
-                onDeleteClips = { ids -> appVm.deleteClips(context, ids) }
-            )
-        }
-
-        // SETTINGS (save returns AppSettings)
-        composable("settings") {
-            SettingsScreen(
-                currentSettings = appVm.settings,
-                onBack = { navController.popBackStack() },
-                onSave = { newSettings: AppSettings ->
-                    appVm.setCameraGranted(newSettings.cameraGranted)
-                    appVm.setLocationGranted(newSettings.locationGranted)
-                    appVm.setSaveGps(newSettings.saveGps)
-                    appVm.setLoopDuration(newSettings.loopDuration)
-                    appVm.setCrashSensitivity(newSettings.crashSensitivity)
-                    appVm.setEmergencyContact(newSettings.emergencyContact)
+                onDeleteClips = { ids ->
+                    clips = clips.filterNot { it.id in ids }
                     navController.popBackStack()
                 }
             )
         }
 
-        // RECORDING
-        composable("recording") {
-            RecordingScreen(
-                uiState = recordingState,
-                cameraAllowed = appVm.settings.cameraGranted,
-                accelActive = true,
-                onToggleRecording = {
-                    if (recordingState.isRecording) {
-                        appVm.stopRecording(context, RecordingStopReason.MANUAL)
-                    } else {
-                        appVm.startRecording(context)
-                    }
-                },
-                onManualSave = {
-                    if (recordingState.isRecording) {
-                        appVm.manualClip(context)
-                    }
-                },
-                onAutoStopAcknowledged = { appVm.acknowledgeAutoStop() },
-                onBack = { navController.popBackStack() }
+        composable("settings") {
+            SettingsScreen(
+                currentSettings = settings,
+                onBack = { navController.popBackStack() },
+                onSave = { newSettings ->
+                    settings = newSettings
+                    navController.popBackStack()
+                }
             )
         }
     }
