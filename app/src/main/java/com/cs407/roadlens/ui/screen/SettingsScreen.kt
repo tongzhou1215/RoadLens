@@ -1,6 +1,7 @@
 package com.cs407.roadlens.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,9 +17,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cs407.roadlens.viewmodel.AppSettings
+import kotlin.math.abs
+
+// --- Sensitivity Mapping ---
+private val sensitivityMap = mapOf(
+    "Low" to 0.2f,    // Less likely to trigger (Requires higher G-force)
+    "Normal" to 0.5f, // Standard setting
+    "High" to 0.8f    // More likely to trigger (Lower G-force threshold)
+)
+
+private fun floatToSensitivityString(value: Float): String {
+    // Finds the closest string option to the saved float value
+    return sensitivityMap.minByOrNull { (_, f) -> abs(f - value) }?.key ?: "Normal"
+}
+// ---------------------------
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,7 +54,11 @@ fun SettingsScreen(
 
     var grantLocation by rememberSaveable { mutableStateOf(sanitizedCurrent.locationGranted) }
     var saveGps by rememberSaveable { mutableStateOf(sanitizedCurrent.saveGps) }
-    var crashSensitivity by rememberSaveable { mutableFloatStateOf(sanitizedCurrent.crashSensitivity) } // 0f..1f
+
+    // --- UPDATED STATE: Use String for display ---
+    var crashSensitivityString by rememberSaveable {
+        mutableStateOf(floatToSensitivityString(sanitizedCurrent.crashSensitivity))
+    }
 
     val baseDurationOptions = listOf("30 Seconds", "1 Minute", "3 Minutes", "5 Minutes")
     val durationOptions = remember(sanitizedCurrent.loopDuration) {
@@ -58,7 +78,7 @@ fun SettingsScreen(
     LaunchedEffect(sanitizedCurrent) {
         grantLocation = sanitizedCurrent.locationGranted
         saveGps = sanitizedCurrent.saveGps
-        crashSensitivity = sanitizedCurrent.crashSensitivity
+        crashSensitivityString = floatToSensitivityString(sanitizedCurrent.crashSensitivity) // Sync new state
         loopDuration = sanitizedCurrent.loopDuration.takeIf { it in durationOptions } ?: durationOptions.first()
         emergencyContact = sanitizedCurrent.emergencyContact
     }
@@ -67,7 +87,7 @@ fun SettingsScreen(
         grantLocation,
         saveGps,
         loopDuration,
-        crashSensitivity,
+        crashSensitivityString, // Depend on string state
         emergencyContact,
         cameraPermissionGranted
     ) {
@@ -76,7 +96,9 @@ fun SettingsScreen(
             locationGranted = grantLocation,
             saveGps = saveGps,
             loopDuration = loopDuration,
-            crashSensitivity = crashSensitivity,
+            // --- CONVERT STRING BACK TO FLOAT FOR MODEL ---
+            crashSensitivity = sensitivityMap[crashSensitivityString] ?: 0.5f,
+            // ----------------------------------------------
             emergencyContact = emergencyContact
         )
     }
@@ -229,23 +251,52 @@ fun SettingsScreen(
                 }
             }
 
-            // Crash Sensitivity (slider)
+            // --- UPDATED: Crash Sensitivity (Discrete Control) ---
             item {
                 SettingCard {
                     Text("Crash sensitivity", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(6.dp))
-                    Slider(
-                        value = crashSensitivity,
-                        onValueChange = { crashSensitivity = it },
-                        valueRange = 0f..1f
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Low", color = Color.Gray, fontSize = 12.sp)
-                        Text(String.format("%.2f", crashSensitivity), color = Color.Gray, fontSize = 12.sp)
-                        Text("High", color = Color.Gray, fontSize = 12.sp)
+                    Spacer(Modifier.height(12.dp))
+
+                    val options = listOf("Low", "Normal", "High")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min) // Required for vertical dividers/equal heights
+                            .background(Color.White, RoundedCornerShape(12.dp)),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        options.forEachIndexed { index, option ->
+                            val isSelected = option == crashSensitivityString
+                            SensitivityOption(
+                                label = option,
+                                isSelected = isSelected,
+                                onClick = { crashSensitivityString = option },
+                                isFirst = index == 0,
+                                isLast = index == options.lastIndex
+                            )
+                            if (index < options.lastIndex) {
+                                Divider(
+                                    color = Color(0xFFE0E0E0),
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .width(1.dp)
+                                )
+                            }
+                        }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = when (crashSensitivityString) {
+                            "High" -> "High sensitivity is more likely to auto-save, even during hard braking."
+                            "Low" -> "Low sensitivity requires a major impact before auto-saving a critical clip."
+                            else -> "Normal sensitivity balances false alarms against accident detection."
+                        },
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
                 }
             }
+            // -----------------------------------------------------
 
             item { SectionHeader(title = "Safety") }
 
@@ -268,6 +319,41 @@ fun SettingsScreen(
         }
     }
 }
+
+// --- NEW COMPOSABLE FOR SEGMENTED CONTROL OPTION ---
+@Composable
+private fun RowScope.SensitivityOption(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    isFirst: Boolean,
+    isLast: Boolean
+) {
+    val cornerShape = when {
+        isFirst -> RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
+        isLast -> RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp)
+        else -> RoundedCornerShape(0.dp)
+    }
+
+    Surface(
+        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+        contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+        shape = cornerShape,
+        tonalElevation = 0.dp,
+        modifier = Modifier
+            .weight(1f)
+            .clickable(onClick = onClick)
+    ) {
+        Text(
+            text = label,
+            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(vertical = 12.dp)
+        )
+    }
+}
+// --------------------------------------------------
 
 @Composable
 private fun SettingCard(content: @Composable ColumnScope.() -> Unit) {
