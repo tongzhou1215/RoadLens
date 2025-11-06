@@ -17,9 +17,10 @@ class CrashDetector(
     private val onCrash: CrashCallback
 ) : SensorEventListener {
 
-    // Configuration derived from user sensitivity (0.0 to 1.0)
-    // Low Sensitivity (e.g., 0.25) should mean a high G threshold.
-    private var crashGThreshold: Double = 15.0 // ~1.5G by default (in m/s^2)
+    // Thresholds:
+    // 30.0 m/s^2 ≈ 3.0 G (Low Sensitivity/Requires extreme force)
+    // 12.0 m/s^2 ≈ 1.2 G (High Sensitivity/Triggers easily)
+    private var crashGThreshold: Double = 15.0 // Initial default, overwritten in start()
     private val speedDropThresholdMps = 4.5 // ~10 MPH drop (in m/s)
 
     // Sensor State
@@ -31,8 +32,14 @@ class CrashDetector(
     private var lastAccidentTime: Long = 0
     private val minTimeBetweenAccidentsMs = 5000L // 5 seconds debounce
 
+    /**
+     * Initializes crash detection based on the user-selected sensitivity (0.0 to 1.0).
+     * 0.0 (Low Sensitivity) maps to a high G-threshold (less likely to trigger).
+     * 1.0 (High Sensitivity) maps to a low G-threshold (more likely to trigger).
+     */
     fun start(sensitivity: Float) {
-        // Adjust threshold: Sensitivity 0.0=3G (30m/s^2), 1.0=1.2G (12m/s^2)
+        // Linearly map 0.0-1.0 to 30.0 m/s^2 - 12.0 m/s^2.
+        // The ViewModel settings currently map: Low(0.2f) -> 26.4 m/s^2; Normal(0.5f) -> 21.0 m/s^2; High(0.8f) -> 15.6 m/s^2.
         crashGThreshold = 30.0 - (18.0 * sensitivity)
 
         accelerometer?.let {
@@ -75,8 +82,6 @@ class CrashDetector(
         // 2. Check against the dynamic threshold
         if (totalAcceleration > crashGThreshold) {
 
-            // Log for debugging: println("High G-Force detected: $totalAcceleration m/s^2")
-
             // Case A: Speed data available - Use correlation check
             if (recentSpeeds.size >= 5) {
                 val maxSpeed = recentSpeeds.maxOrNull() ?: 0f
@@ -99,6 +104,6 @@ class CrashDetector(
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // to be implemented
+        // Not implemented (usually not critical for accelerometer use)
     }
 }
