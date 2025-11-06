@@ -23,8 +23,8 @@ import androidx.lifecycle.viewModelScope
 
 // Global App Settings
 data class AppSettings(
-    val cameraGranted: Boolean = false,
-    val locationGranted: Boolean = false,
+    val cameraGranted: Boolean = false, //camera permission
+    val locationGranted: Boolean = false, //
     val saveGps: Boolean = false,
     val loopDuration: String = "1 Minute",
     val crashSensitivity: Float = 0.25f,

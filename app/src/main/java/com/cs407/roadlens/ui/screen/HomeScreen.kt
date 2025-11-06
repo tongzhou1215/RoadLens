@@ -15,8 +15,8 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun HomeScreen(
-    onViewAlbum: () -> Unit = {},  // <-- for navigation
-    onStartRecording: () -> Unit = {},  // placeholder for future
+    onViewAlbum: () -> Unit = {},  //album
+    onStartRecording: () -> Unit = {},  //
     onSettings: () -> Unit = {},         // placeholder for future
     cameraGranted: Boolean
 ) {
@@ -27,7 +27,7 @@ fun HomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // --- Top section (title area) ---
+        //title
         Column(
             modifier = Modifier
                 .fillMaxWidth()
