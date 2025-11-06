@@ -1,13 +1,18 @@
 package com.cs407.roadlens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.navigation.compose.rememberNavController
 import com.cs407.roadlens.ui.theme.RoadLensTheme
@@ -15,48 +20,62 @@ import com.cs407.roadlens.navigation.NavPage
 
 class MainActivity : ComponentActivity() {
 
-    // Adjust this list if you also capture audio, etc.
-    private val basePermissions = arrayOf(
-        Manifest.permission.CAMERA
-    )
+    private val cameraPermission = Manifest.permission.CAMERA
 
-    private val requestPermissions =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grantMap ->
-            val allGranted = grantMap.values.all { it }
-            if (!allGranted) {
-                Toast.makeText(this, "Camera permission is required", Toast.LENGTH_LONG).show()
+    private var cameraPermissionGranted by mutableStateOf(false)
+    private var hasRequestedCameraPermission by mutableStateOf(false)
+    private var cameraPermissionPermanentlyDenied by mutableStateOf(false)
+
+    private val requestCameraPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            hasRequestedCameraPermission = true
+            cameraPermissionGranted = granted
+            cameraPermissionPermanentlyDenied = !granted && !shouldShowRequestPermissionRationale(cameraPermission)
+            if (!granted) {
+                Toast.makeText(this, "Camera permission is required to record", Toast.LENGTH_LONG).show()
             }
-            // Continue to UI regardless; screens can react to missing perms.
-            renderUi()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Request POST_NOTIFICATIONS on 13+ if you use a ForegroundService with a notification.
-        val perms = buildList {
-            addAll(basePermissions)
-            if (Build.VERSION.SDK_INT >= 33) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }.toTypedArray()
-
-        if (perms.all { hasPermission(it) }) {
-            renderUi()
-        } else {
-            requestPermissions.launch(perms)
-        }
-    }
-
-    private fun renderUi() {
+        refreshCameraPermissionState()
         setContent {
             RoadLensTheme {
                 val navController = rememberNavController()
-                NavPage(navController = navController)
+                NavPage(
+                    navController = navController,
+                    cameraPermissionGranted = cameraPermissionGranted,
+                    cameraPermissionPermanentlyDenied = cameraPermissionPermanentlyDenied,
+                    onRequestCameraPermission = { requestCameraPermission.launch(cameraPermission) },
+                    onOpenAppSettings = { openAppSettings() }
+                )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshCameraPermissionState()
+    }
+
+    private fun refreshCameraPermissionState() {
+        val granted = hasPermission(cameraPermission)
+        cameraPermissionGranted = granted
+        cameraPermissionPermanentlyDenied =
+            !granted && hasRequestedCameraPermission && !shouldShowRequestPermissionRationale(cameraPermission)
     }
 
     private fun hasPermission(p: String): Boolean =
         ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    private fun openAppSettings() {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null)
+        ).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(intent)
+    }
 }

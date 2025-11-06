@@ -6,12 +6,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cs407.roadlens.viewmodel.AppSettings
@@ -20,37 +24,71 @@ import com.cs407.roadlens.viewmodel.AppSettings
 @Composable
 fun SettingsScreen(
     currentSettings: AppSettings,
+    cameraPermissionGranted: Boolean,
+    cameraPermissionPermanentlyDenied: Boolean,
+    onRequestCameraPermission: () -> Unit,
+    onOpenAppSettings: () -> Unit,
     onBack: () -> Unit = {},
     onSave: (AppSettings) -> Unit = {}
 ) {
     // ---- Local UI state ----
-    var grantCamera by rememberSaveable { mutableStateOf(currentSettings.cameraGranted) }
-    var grantLocation by rememberSaveable { mutableStateOf(currentSettings.locationGranted) }
-    var saveGps by rememberSaveable { mutableStateOf(currentSettings.saveGps) }
-    var crashSensitivity by rememberSaveable { mutableFloatStateOf(currentSettings.crashSensitivity) } // 0f..1f
+    val sanitizedCurrent = remember(currentSettings, cameraPermissionGranted) {
+        currentSettings.copy(cameraGranted = cameraPermissionGranted)
+    }
+
+    var grantLocation by rememberSaveable { mutableStateOf(sanitizedCurrent.locationGranted) }
+    var saveGps by rememberSaveable { mutableStateOf(sanitizedCurrent.saveGps) }
+    var crashSensitivity by rememberSaveable { mutableFloatStateOf(sanitizedCurrent.crashSensitivity) } // 0f..1f
 
     val baseDurationOptions = listOf("30 Seconds", "1 Minute", "3 Minutes", "5 Minutes")
-    val durationOptions = remember(currentSettings.loopDuration) {
-        if (currentSettings.loopDuration in baseDurationOptions) baseDurationOptions
-        else baseDurationOptions + currentSettings.loopDuration
+    val durationOptions = remember(sanitizedCurrent.loopDuration) {
+        if (sanitizedCurrent.loopDuration in baseDurationOptions) baseDurationOptions
+        else baseDurationOptions + sanitizedCurrent.loopDuration
     }
     var loopDuration by rememberSaveable {
         mutableStateOf(
-            currentSettings.loopDuration.takeIf { it.isNotBlank() } ?: baseDurationOptions[1]
+            sanitizedCurrent.loopDuration.takeIf { it.isNotBlank() } ?: baseDurationOptions[1]
         )
     }
     var durationExpanded by remember { mutableStateOf(false) }
 
-    var emergencyContact by rememberSaveable { mutableStateOf(currentSettings.emergencyContact) }
+    var emergencyContact by rememberSaveable { mutableStateOf(sanitizedCurrent.emergencyContact) }
 
     // 如果外部 currentSettings 变化，同步表单
-    LaunchedEffect(currentSettings) {
-        grantCamera = currentSettings.cameraGranted
-        grantLocation = currentSettings.locationGranted
-        saveGps = currentSettings.saveGps
-        crashSensitivity = currentSettings.crashSensitivity
-        loopDuration = currentSettings.loopDuration.takeIf { it in durationOptions } ?: durationOptions.first()
-        emergencyContact = currentSettings.emergencyContact
+    LaunchedEffect(sanitizedCurrent) {
+        grantLocation = sanitizedCurrent.locationGranted
+        saveGps = sanitizedCurrent.saveGps
+        crashSensitivity = sanitizedCurrent.crashSensitivity
+        loopDuration = sanitizedCurrent.loopDuration.takeIf { it in durationOptions } ?: durationOptions.first()
+        emergencyContact = sanitizedCurrent.emergencyContact
+    }
+
+    val pendingSettings = remember(
+        grantLocation,
+        saveGps,
+        loopDuration,
+        crashSensitivity,
+        emergencyContact,
+        cameraPermissionGranted
+    ) {
+        AppSettings(
+            cameraGranted = cameraPermissionGranted,
+            locationGranted = grantLocation,
+            saveGps = saveGps,
+            loopDuration = loopDuration,
+            crashSensitivity = crashSensitivity,
+            emergencyContact = emergencyContact
+        )
+    }
+
+    val hasChanges = pendingSettings != sanitizedCurrent
+
+    fun saveAndClose() {
+        if (hasChanges) {
+            onSave(pendingSettings)
+        } else {
+            onBack()
+        }
     }
 
     Scaffold(
@@ -64,18 +102,8 @@ fun SettingsScreen(
                 },
                 actions = {
                     TextButton(
-                        onClick = {
-                            onSave(
-                                AppSettings(
-                                    cameraGranted = grantCamera,
-                                    locationGranted = grantLocation,
-                                    saveGps = saveGps,
-                                    loopDuration = loopDuration,
-                                    crashSensitivity = crashSensitivity,
-                                    emergencyContact = emergencyContact
-                                )
-                            )
-                        }
+                        enabled = hasChanges,
+                        onClick = { onSave(pendingSettings) }
                     ) { Text("Save") }
                 }
             )
@@ -83,24 +111,14 @@ fun SettingsScreen(
         bottomBar = {
             Surface(color = Color(0xFFF6F6F8), shadowElevation = 6.dp) {
                 Button(
-                    onClick = {
-                        onSave(
-                            AppSettings(
-                                cameraGranted = grantCamera,
-                                locationGranted = grantLocation,
-                                saveGps = saveGps,
-                                loopDuration = loopDuration,
-                                crashSensitivity = crashSensitivity,
-                                emergencyContact = emergencyContact
-                            )
-                        )
-                    },
+                    onClick = ::saveAndClose,
+                    enabled = hasChanges,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text("Save Changes")
+                    Text(if (hasChanges) "Save Changes" else "All Changes Saved")
                 }
             }
         }
@@ -111,20 +129,39 @@ fun SettingsScreen(
                 .background(Color.White)
                 .padding(inner)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            item { SectionHeader(title = "Permissions") }
+
             // Camera
             item {
                 SettingCard {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Camera Permission", fontSize = 16.sp)
-                            Text("Allow camera access for recording", color = Color.Gray, fontSize = 12.sp)
+                    Text("Camera", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
+                    val cameraMessage = when {
+                        cameraPermissionGranted -> "Camera access is enabled."
+                        cameraPermissionPermanentlyDenied -> "Camera access is blocked. Enable the permission from system settings to record."
+                        else -> "Camera access is required to start recording."
+                    }
+                    Text(cameraMessage, color = Color.Gray, fontSize = 13.sp)
+                    Spacer(Modifier.height(12.dp))
+                    if (cameraPermissionGranted) {
+                        StatusPill(
+                            icon = Icons.Rounded.CheckCircle,
+                            label = "Permission granted",
+                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        val actionLabel = if (cameraPermissionPermanentlyDenied) "Open App Settings" else "Grant Permission"
+                        Button(
+                            onClick = if (cameraPermissionPermanentlyDenied) onOpenAppSettings else onRequestCameraPermission,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(imageVector = Icons.Rounded.Info, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(actionLabel)
                         }
-                        Switch(checked = grantCamera, onCheckedChange = { grantCamera = it })
                     }
                 }
             }
@@ -132,39 +169,33 @@ fun SettingsScreen(
             // Location
             item {
                 SettingCard {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Location Permission", fontSize = 16.sp)
-                            Text("Allow location access for GPS tagging", color = Color.Gray, fontSize = 12.sp)
-                        }
-                        Switch(checked = grantLocation, onCheckedChange = { grantLocation = it })
-                    }
+                    SettingToggleRow(
+                        title = "Location",
+                        subtitle = "Allow RoadLens to access GPS for tagging recordings",
+                        checked = grantLocation,
+                        onToggle = { grantLocation = it }
+                    )
                 }
             }
 
             // Save GPS
             item {
                 SettingCard {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Save GPS with Clips", fontSize = 16.sp)
-                            Text("Attach GPS coordinates to saved clips", color = Color.Gray, fontSize = 12.sp)
-                        }
-                        Switch(checked = saveGps, onCheckedChange = { saveGps = it })
-                    }
+                    SettingToggleRow(
+                        title = "Save GPS with clips",
+                        subtitle = "Attach GPS coordinates when clips are exported",
+                        checked = saveGps,
+                        onToggle = { saveGps = it }
+                    )
                 }
             }
+
+            item { SectionHeader(title = "Recording") }
 
             // Loop Duration (dropdown)
             item {
                 SettingCard {
-                    Text("Loop Duration", fontSize = 16.sp)
+                    Text("Loop duration", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     ExposedDropdownMenuBox(
                         expanded = durationExpanded,
@@ -177,7 +208,8 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .menuAnchor()
                                 .fillMaxWidth(),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = durationExpanded) }
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = durationExpanded) },
+                            placeholder = { Text("Select duration") }
                         )
                         ExposedDropdownMenu(
                             expanded = durationExpanded,
@@ -200,7 +232,7 @@ fun SettingsScreen(
             // Crash Sensitivity (slider)
             item {
                 SettingCard {
-                    Text("Crash Sensitivity", fontSize = 16.sp)
+                    Text("Crash sensitivity", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     Slider(
                         value = crashSensitivity,
@@ -215,10 +247,12 @@ fun SettingsScreen(
                 }
             }
 
+            item { SectionHeader(title = "Safety") }
+
             // Emergency Contact
             item {
                 SettingCard {
-                    Text("Emergency Contact", fontSize = 16.sp)
+                    Text("Emergency contact", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     OutlinedTextField(
                         value = emergencyContact,
@@ -245,5 +279,59 @@ private fun SettingCard(content: @Composable ColumnScope.() -> Unit) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp), content = content)
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color(0xFF8D8DA5),
+        modifier = Modifier.padding(start = 4.dp)
+    )
+}
+
+@Composable
+private fun SettingToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(2.dp))
+            Text(subtitle, color = Color.Gray, fontSize = 12.sp)
+        }
+        Switch(checked = checked, onCheckedChange = onToggle)
+    }
+}
+
+@Composable
+private fun StatusPill(
+    icon: ImageVector,
+    label: String,
+    containerColor: Color,
+    contentColor: Color
+) {
+    Surface(
+        color = containerColor,
+        shape = RoundedCornerShape(999.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = contentColor)
+            Text(label, color = contentColor, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        }
     }
 }

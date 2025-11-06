@@ -15,11 +15,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,7 +47,7 @@ fun RecordingScreen(
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Show snackbars for auto-stop / manual save
+    // Snackbars for auto-stop / manual save
     LaunchedEffect(uiState.autoStopped, uiState.lastSavedClipKind) {
         val message = when {
             uiState.autoStopped ->
@@ -87,10 +83,12 @@ fun RecordingScreen(
                     .padding(12.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                // Live camera preview (this is what you were missing)
-                CameraPreviewBox(
-                    modifier = Modifier.matchParentSize()
-                )
+                // Show Preview only when NOT recording (service owns camera while recording)
+                if (!uiState.isRecording) {
+                    CameraPreviewBox(
+                        modifier = Modifier.matchParentSize()
+                    )
+                }
 
                 Row(
                     modifier = Modifier
@@ -248,9 +246,12 @@ fun RecordingScreen(
 
 /** Route used by your NavGraph */
 @Composable
-fun RecordingRoute(vm: ViewModel = viewModel()) {
+fun RecordingRoute(
+    vm: ViewModel = viewModel(),
+    onBack: (() -> Unit)? = null
+) {
     val ctx = LocalContext.current
-    val ui = vm.recordingState.collectAsState().value
+    val ui by vm.recordingState.collectAsState()
 
     RecordingScreen(
         uiState = ui,
@@ -260,7 +261,8 @@ fun RecordingRoute(vm: ViewModel = viewModel()) {
             else vm.startRecording(ctx)
         },
         onManualSave = { vm.manualClip(ctx) },
-        onAutoStopAcknowledged = { vm.acknowledgeAutoStop() }
+        onAutoStopAcknowledged = { vm.acknowledgeAutoStop() },
+        onBack = onBack
     )
 }
 

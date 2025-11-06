@@ -35,6 +35,42 @@ data class AppSettings(
     val emergencyContact: String = ""
 )
 
+// the UI state for recording
+data class RecordingUiState(
+    val isRecording: Boolean = false,
+    val elapsedSeconds: Int = 0,
+    val targetDurationSeconds: Int = 60,
+    val autoStopped: Boolean = false,
+    val lastSavedClipKind: ClipKind? = null
+)
+
+
+data class RecordingClip(
+    val id: Long,
+    val fileName: String,
+    val durationSeconds: Int,
+    val recordedAt: Long,
+    val kind: ClipKind,
+    val uploadStatus: ClipUploadStatus
+)
+
+enum class ClipKind { LOOP, MANUAL }
+enum class ClipUploadStatus { LOCAL_ONLY, SYNCED }
+enum class RecordingStopReason { MANUAL, MANUAL_CLIP, AUTO }
+
+//recording loop duration
+private fun parseLoopDuration(option: String): Int = when (option) {
+    "30 Seconds" -> 30
+    "1 Minute" -> 60
+    "3 Minutes" -> 3 * 60
+    "5 Minutes" -> 5 * 60
+    else -> option.toIntOrNull() ?: 60
+}
+
+private const val PREFS_NAME = "recording_clips"
+private const val KEY_CLIPS = "clips"
+private const val RECORDINGS_DIR = "recordings"
+
 private fun dashcamPrepare(context: Context) {
     startForegroundService(
         context,
@@ -59,6 +95,7 @@ private fun dashcamStop(context: Context) {
     )
 }
 
+//Holds Settings state; Exposes Recording UI state + list of local clips
 class ViewModel : androidx.lifecycle.ViewModel() {
     var settings by mutableStateOf(AppSettings())
         private set
@@ -265,38 +302,3 @@ class ViewModel : androidx.lifecycle.ViewModel() {
         prefs.edit().putString(KEY_CLIPS, array.toString()).apply()
     }
 }
-
-data class RecordingUiState(
-    val isRecording: Boolean = false,
-    val elapsedSeconds: Int = 0,
-    val targetDurationSeconds: Int = 60,
-    val autoStopped: Boolean = false,
-    val lastSavedClipKind: ClipKind? = null
-)
-
-data class RecordingClip(
-    val id: Long,
-    val fileName: String,
-    val durationSeconds: Int,
-    val recordedAt: Long,
-    val kind: ClipKind,
-    val uploadStatus: ClipUploadStatus
-)
-
-enum class ClipKind { LOOP, MANUAL }
-
-enum class ClipUploadStatus { LOCAL_ONLY, SYNCED }
-
-enum class RecordingStopReason { MANUAL, MANUAL_CLIP, AUTO }
-
-private fun parseLoopDuration(option: String): Int = when (option) {
-    "30 Seconds" -> 30
-    "1 Minute" -> 60
-    "3 Minutes" -> 3 * 60
-    "5 Minutes" -> 5 * 60
-    else -> option.toIntOrNull() ?: 60
-}
-
-private const val PREFS_NAME = "recording_clips"
-private const val KEY_CLIPS = "clips"
-private const val RECORDINGS_DIR = "recordings"
