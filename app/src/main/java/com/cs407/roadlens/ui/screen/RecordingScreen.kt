@@ -45,19 +45,26 @@ fun RecordingScreen(
     onAutoStopAcknowledged: () -> Unit = {},
     onBack: (() -> Unit)? = null
 ) {
+    // Scaffold still wants a SnackbarHost, but we don't use it for messages now
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
-    // Snackbars for auto-stop / manual save
+    // ----- TOAST EVERY TIME A CLIP IS SAVED (MANUAL OR LOOP) -----
     LaunchedEffect(uiState.autoStopped, uiState.lastSavedClipKind) {
-        val message = when {
-            uiState.autoStopped ->
-                "Recording saved after reaching ${formatDurationLabel(uiState.targetDurationSeconds)}"
-            uiState.lastSavedClipKind == ClipKind.MANUAL -> "Manual clip saved"
-            uiState.lastSavedClipKind == ClipKind.LOOP -> "Recording saved"
+        val message = when (uiState.lastSavedClipKind) {
+            ClipKind.MANUAL ->
+                "Manual clip saved"
+            ClipKind.LOOP ->
+                "${formatDurationLabel(uiState.targetDurationSeconds)} clip saved"
             else -> null
         }
+
         if (message != null) {
-            snackbarHostState.showSnackbar(message)
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+
+        // We now treat autoStopped as "loop segment finished", not "recording ended"
+        if (uiState.autoStopped) {
             onAutoStopAcknowledged()
         }
     }
@@ -83,8 +90,8 @@ fun RecordingScreen(
                     .padding(12.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                // Show Preview only when NOT recording (service owns camera while recording)
-                if (!uiState.isRecording) {
+                // Always show preview while camera is allowed
+                if (cameraAllowed) {
                     CameraPreviewBox(
                         modifier = Modifier.matchParentSize()
                     )
@@ -154,8 +161,9 @@ fun RecordingScreen(
                             fontWeight = FontWeight.Black
                         )
                         if (uiState.isRecording) {
+                            // Text updated to match loop behavior
                             Text(
-                                text = "Auto stop at ${formatDurationLabel(uiState.targetDurationSeconds)}",
+                                text = "Saving ${formatDurationLabel(uiState.targetDurationSeconds)} clips",
                                 color = Color(0xFFCBD5F5),
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -179,17 +187,8 @@ fun RecordingScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("ACCEL", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                if (accelActive) "Active" else "Paused",
-                                color = if (accelActive) Color(0xFF16A34A) else Color.Gray,
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-
                         val recordEnabled = cameraAllowed
                         Box(
                             modifier = Modifier
@@ -214,19 +213,6 @@ fun RecordingScreen(
                                 fontSize = 22.sp
                             )
                         }
-
-                        Column(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable(enabled = cameraAllowed && uiState.isRecording) { onManualSave() }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            val manualColor =
-                                if (cameraAllowed && uiState.isRecording) Color(0xFFEA4335) else Color(0xFFEA4335).copy(alpha = 0.4f)
-                            Text("MANUAL", color = manualColor, fontWeight = FontWeight.SemiBold)
-                            Text("Save Clip", color = manualColor, style = MaterialTheme.typography.labelMedium)
-                        }
                     }
 
                     if (!cameraAllowed) {
@@ -243,6 +229,8 @@ fun RecordingScreen(
         }
     }
 }
+
+
 
 /** Route used by your NavGraph */
 @Composable
