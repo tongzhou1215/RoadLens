@@ -1,5 +1,23 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <style name="Theme.RoadLens" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.RoadLens" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#000000</item>
+
+        <item name="windowSplashScreenAnimatedIcon">@drawable/roadlens</item>
+
+        <item name="windowSplashScreenAnimationDuration">200</item>
+
+        <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+
+        <item name="postSplashScreenTheme">@style/Theme.RoadLens.Main</item>
+    </style>
+
+    <style name="Theme.RoadLens.Main" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowFullscreen">false</item>
+    </style>
+
 </resources>
