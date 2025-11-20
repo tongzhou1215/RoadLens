@@ -51,24 +51,22 @@ import com.cs407.roadlens.viewmodel.ViewModel
 fun RecordingScreen(
     uiState: RecordingUiState,
     cameraAllowed: Boolean = true,
-    accelActive: Boolean = true,
+    accelActive: Boolean = true, // currently unused but kept
     onToggleRecording: () -> Unit,
     onManualSave: () -> Unit,
     onAutoStopAcknowledged: () -> Unit = {},
     onBack: (() -> Unit)? = null,
-    // NEW: callback so the route can get the VideoCapture instance
+    // called when CameraX VideoCapture is created
     onBindVideoCapture: (VideoCapture<Recorder>) -> Unit = {}
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    // ----- TOAST EVERY TIME A CLIP IS SAVED (MANUAL OR LOOP) -----
+    // Toast whenever clip saved + handle auto-stop handshake
     LaunchedEffect(uiState.autoStopped, uiState.lastSavedClipKind) {
         val message = when (uiState.lastSavedClipKind) {
-            ClipKind.MANUAL ->
-                "Manual clip saved"
-            ClipKind.LOOP ->
-                "${formatDurationLabel(uiState.targetDurationSeconds)} clip saved"
+            ClipKind.MANUAL -> "Manual clip saved"
+            ClipKind.LOOP -> "${formatDurationLabel(uiState.targetDurationSeconds)} clip saved"
             else -> null
         }
 
@@ -77,11 +75,12 @@ fun RecordingScreen(
         }
 
         if (uiState.autoStopped) {
+            // ViewModel says "auto stopped" → let route stop CameraX + clear flags
             onAutoStopAcknowledged()
         }
     }
 
-    // If permission revoked while recording, stop
+    // If permission revoked while recording, force stop
     LaunchedEffect(cameraAllowed, uiState.isRecording) {
         if (!cameraAllowed && uiState.isRecording) onToggleRecording()
     }
@@ -241,7 +240,7 @@ fun RecordingScreen(
     }
 }
 
-/** Route used by your NavGraph */
+/** Route used by NavGraph */
 @Composable
 fun RecordingRoute(
     vm: ViewModel = viewModel(),
@@ -271,7 +270,7 @@ fun RecordingRoute(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         ).setContentValues(contentValues).build()
 
-        val recorder = vc.output
+        val prepared = videoCapture!!.output
             .prepareRecording(ctx, outputOptions)
             .apply {
                 val audioGranted =
@@ -281,7 +280,7 @@ fun RecordingRoute(
                 }
             }
 
-        activeRecording = recorder.start(ContextCompat.getMainExecutor(ctx)) { event ->
+        activeRecording = prepared.start(ContextCompat.getMainExecutor(ctx)) { event ->
             when (event) {
                 is VideoRecordEvent.Finalize -> {
                     if (!event.hasError()) {
@@ -299,7 +298,6 @@ fun RecordingRoute(
                     }
                     activeRecording = null
                 }
-
                 else -> Unit
             }
         }
@@ -315,17 +313,21 @@ fun RecordingRoute(
         cameraAllowed = vm.settings.cameraGranted,
         onToggleRecording = {
             if (ui.isRecording) {
-                // stop video + inform VM
+                // manual stop
                 stopVideoRecording()
                 vm.stopRecording(ctx, RecordingStopReason.MANUAL)
             } else {
-                // start video + inform VM
+                // start
                 startVideoRecording()
                 vm.startRecording(ctx)
             }
         },
         onManualSave = { vm.manualClip(ctx) },
-        onAutoStopAcknowledged = { vm.acknowledgeAutoStop() },
+        onAutoStopAcknowledged = {
+            // ViewModel auto-stopped → finalize CameraX recording, then clear autoStopped flag
+            stopVideoRecording()
+            vm.acknowledgeAutoStop()
+        },
         onBack = onBack,
         onBindVideoCapture = { vc -> videoCapture = vc }
     )
@@ -399,7 +401,7 @@ private fun CameraPreviewBox(
         }
         future.addListener(listener, ContextCompat.getMainExecutor(ctx))
         onDispose {
-            // Leave bound while visible; actual lifecycle handles cleanup
+            // LifecycleOwner will handle cleanup
         }
     }
 }
@@ -417,7 +419,8 @@ private fun formatDurationLabel(totalSeconds: Int): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return if (minutes > 0) {
-        if (seconds == 0) String.format("%d min", minutes) else String.format("%d:%02d min", minutes, seconds)
+        if (seconds == 0) String.format("%d min", minutes)
+        else String.format("%d:%02d min", minutes, seconds)
     } else {
         String.format("%d sec", seconds)
     }
