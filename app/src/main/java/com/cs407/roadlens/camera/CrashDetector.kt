@@ -12,7 +12,7 @@ import kotlin.math.sqrt
 // Crash callback
 typealias CrashCallback = () -> Unit
 
-// NEW: Three crash sensitivity modes
+// Three crash sensitivity modes
 enum class CrashSensitivity {
     LOW,      // Least sensitive (requires strong impact)
     MEDIUM,   // Balanced
@@ -25,14 +25,13 @@ class CrashDetector(
 ) : SensorEventListener {
 
     // Sensitivity thresholds (m/s^2)
-    // Rough estimates where 9.8 ≈ 1G
-    private val lowThreshold = 28.0    // ~ 2.8G
-    private val mediumThreshold = 20.0 // ~ 2.0G
-    private val highThreshold = 14.0   // ~ 1.4G
+    private val lowThreshold = 28.0    // ~2.8G
+    private val mediumThreshold = 20.0 // ~2.0G
+    private val highThreshold = 14.0   // ~1.4G
 
     private var crashGThreshold: Double = mediumThreshold
 
-    private val speedDropThresholdMps = 4.5 // ≈ 10 MPH drop
+    private val speedDropThresholdMps = 4.5 // ~10 MPH drop
 
     private val sensorManager: SensorManager = context.getSystemService()!!
     private val accelerometer: Sensor? =
@@ -68,7 +67,6 @@ class CrashDetector(
 
     fun onLocationUpdate(location: Location) {
         val speedMps = location.speed
-
         recentSpeeds.add(speedMps)
         while (recentSpeeds.size > 30) {
             recentSpeeds.removeAt(0)

@@ -136,6 +136,7 @@ private fun AlbumCard(
     val (borderColor, badgeBg, titleColor, statusColor) = when (item.kind) {
         ClipKind.LOOP -> Quadruple(Color(0xFF22C55E), Color(0xFFEFFBF3), Color(0xFF0F5132), Color(0xFF0F5132))
         ClipKind.MANUAL -> Quadruple(Color(0xFFFFB74D), Color(0xFFFFF4E5), Color(0xFFB76E00), Color(0xFFB76E00))
+        else -> Quadruple(Color.Gray, Color.LightGray, Color.DarkGray, Color.DarkGray)
     }
 
     val stroke = if (selected) BorderStroke(2.dp, Color(0xFF3B82F6)) else BorderStroke(1.dp, borderColor.copy(alpha = 0.5f))
@@ -165,6 +166,7 @@ private fun AlbumCard(
                     text = when (item.kind) {
                         ClipKind.LOOP -> "Loop Recording"
                         ClipKind.MANUAL -> "Manual Recording"
+                        else -> "Unknown Recording"
                     },
                     fontWeight = FontWeight.SemiBold,
                     color = titleColor,
