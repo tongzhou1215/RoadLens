@@ -24,6 +24,8 @@ import android.content.Intent
 import androidx.core.content.ContextCompat.startForegroundService
 import com.cs407.roadlens.camera.DashCamActions
 import com.cs407.roadlens.camera.DashCamService
+import com.cs407.roadlens.data.local.entities.EmergencyContact
+import com.cs407.roadlens.data.repository.EmergencyContactRepository
 
 // Global App Settings
 data class AppSettings(
@@ -300,5 +302,40 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             array.put(obj)
         }
         prefs.edit().putString(KEY_CLIPS, array.toString()).apply()
+    }
+}
+
+class EmergencyContactViewModel(val repo: EmergencyContactRepository) : ViewModel() {
+
+    var name by mutableStateOf("")
+    var phone by mutableStateOf("")
+    var isLoaded by mutableStateOf(false)
+
+    init {
+        viewModelScope.launch {
+            val contact = repo.getContact()
+            if (contact != null) {
+                name = contact.name
+                phone = contact.phone
+            }
+            isLoaded = true
+        }
+    }
+
+    fun saveContact() {
+        viewModelScope.launch {
+            repo.saveContact(
+                EmergencyContact(
+                    id = 1,
+                    name = name,
+                    phone = phone
+                )
+            )
+        }
+    }
+
+    fun clearChanges(original: EmergencyContact?) {
+        name = original?.name ?: ""
+        phone = original?.phone ?: ""
     }
 }

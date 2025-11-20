@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.os.postDelayed
 import androidx.lifecycle.LifecycleService
 import android.os.Handler
+import android.util.Log
 import android.widget.Toast
 
 object DashCamActions {
@@ -38,6 +39,7 @@ class DashCamService : LifecycleService() {
     private var currentRecording: Recording? = null
     private var segMinutes = 3       // default; updated from ACTION_START/UPDATE
     private var withAudio = false
+    private var loopActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -96,6 +98,7 @@ class DashCamService : LifecycleService() {
     }
 
     private fun startNextSegment() {
+        Log.d("Func Call", "startNextSegment")
         val capture = videoCapture ?: return
         val name = "DashCam_${timestamp()}.mp4"
 
@@ -126,11 +129,7 @@ class DashCamService : LifecycleService() {
     }
 
     private fun finalizeCurrentSegment() {
-        currentRecording?.let {
-            // Will trigger VideoRecordEvent.Finalize callback
-            it.stop()
-            currentRecording = null
-        }
+        currentRecording?.stop()
     }
 
     private fun stopLoop() {
