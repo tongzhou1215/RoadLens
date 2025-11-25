@@ -26,6 +26,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.os.postDelayed
 import androidx.lifecycle.LifecycleService
 import android.os.Handler
+import android.util.Log
 import android.widget.Toast
 import androidx.annotation.RequiresPermission
 
@@ -46,6 +47,7 @@ class DashCamService : LifecycleService() {
     private var currentRecording: Recording? = null
     private var segMinutes = 3
     private var withAudio = false
+    private var loopActive = false
     private var crashSensitivity = 0.25f // <-- NEW
 
     // Sensor & Location properties
@@ -163,6 +165,7 @@ class DashCamService : LifecycleService() {
     }
 
     private fun startNextSegment() {
+        Log.d("Func Call", "startNextSegment")
         val capture = videoCapture ?: return
         val name = "DashCam_${timestamp()}.mp4"
 
@@ -203,6 +206,8 @@ class DashCamService : LifecycleService() {
             showToast("CRITICAL CLIP SAVED (Accident Detected)")
             // TODO: Notify ViewModel about the accident save (e.g., via broadcast/binding)
         }
+    private fun finalizeCurrentSegment() {
+        currentRecording?.stop()
     }
 
     private fun stopLoop() {
@@ -237,3 +242,4 @@ class DashCamService : LifecycleService() {
     private fun mainExecutor() = ContextCompat.getMainExecutor(this)
     private fun mainHandler() = Handler(Looper.getMainLooper())
 }
+

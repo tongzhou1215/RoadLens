@@ -1,6 +1,10 @@
 package com.cs407.roadlens.viewmodel
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,18 +28,20 @@ import android.content.Intent
 import androidx.core.content.ContextCompat.startForegroundService
 import com.cs407.roadlens.camera.DashCamActions
 import com.cs407.roadlens.camera.DashCamService
+import com.cs407.roadlens.data.local.entities.EmergencyContact
+import com.cs407.roadlens.data.repository.EmergencyContactRepository
 
 // Global App Settings
 data class AppSettings(
-    val cameraGranted: Boolean = false, //camera permission
-    val locationGranted: Boolean = false, //
+    val cameraGranted: Boolean = false,
+    val locationGranted: Boolean = false,
     val saveGps: Boolean = false,
     val loopDuration: String = "1 Minute",
     val crashSensitivity: Float = 0.25f,
     val emergencyContact: String = ""
 )
 
-// the UI state for recording
+// UI state for recording
 data class RecordingUiState(
     val isRecording: Boolean = false,
     val elapsedSeconds: Int = 0,
@@ -60,7 +66,7 @@ enum class ClipUploadStatus { LOCAL_ONLY, SYNCED }
 enum class RecordingStopReason { MANUAL, MANUAL_CLIP, AUTO, ACCIDENT } // ADDED ACCIDENT
 // ---------------------
 
-//recording loop duration
+// Parse loop duration option into seconds
 private fun parseLoopDuration(option: String): Int = when (option) {
     "30 Seconds" -> 30
     "1 Minute" -> 60
@@ -73,6 +79,7 @@ private const val PREFS_NAME = "recording_clips"
 private const val KEY_CLIPS = "clips"
 private const val RECORDINGS_DIR = "recordings"
 
+// Holds settings, exposes Recording UI state + list of local clips
 private fun dashcamPrepare(context: Context) {
     startForegroundService(
         context,
@@ -102,6 +109,7 @@ private fun dashcamStop(context: Context) {
 
 //Holds Settings state; Exposes Recording UI state + list of local clips
 class ViewModel : androidx.lifecycle.ViewModel() {
+
     var settings by mutableStateOf(AppSettings())
         private set
 
@@ -118,9 +126,11 @@ class ViewModel : androidx.lifecycle.ViewModel() {
     private var recordingContext: Context? = null
     private var initialized = false
 
+    // ---- Settings setters ----
     fun setCameraGranted(v: Boolean) { settings = settings.copy(cameraGranted = v) }
     fun setLocationGranted(v: Boolean) { settings = settings.copy(locationGranted = v) }
     fun setSaveGps(v: Boolean) { settings = settings.copy(saveGps = v) }
+
     fun setLoopDuration(v: String) {
         settings = settings.copy(loopDuration = v)
         val seconds = parseLoopDuration(v)
@@ -128,9 +138,11 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             state.copy(targetDurationSeconds = seconds)
         }
     }
+
     fun setCrashSensitivity(v: Float) { settings = settings.copy(crashSensitivity = v) }
     fun setEmergencyContact(v: String) { settings = settings.copy(emergencyContact = v) }
 
+    // ---- Initialization for clips ----
     fun ensureInitialized(context: Context) {
         if (initialized) return
         initialized = true
@@ -141,6 +153,7 @@ class ViewModel : androidx.lifecycle.ViewModel() {
         }
     }
 
+    // ---- Recording control (timer) ----
     fun startRecording(context: Context) {
         if (_recordingState.value.isRecording) return
 
@@ -162,27 +175,29 @@ class ViewModel : androidx.lifecycle.ViewModel() {
         val startTimestamp = System.currentTimeMillis()
         currentStartTimestamp = startTimestamp
         recordingContext = context.applicationContext
+
         _recordingState.value = RecordingUiState(
             isRecording = true,
             elapsedSeconds = 0,
             targetDurationSeconds = targetSeconds,
-            autoStopped = false
+            autoStopped = false,
+            lastSavedClipKind = null
         )
-        // keep your Job/loop exactly as you had it…
+
         recordingJob?.cancel()
         recordingJob = viewModelScope.launch {
             while (true) {
                 delay(1.seconds)
                 val current = _recordingState.value
                 if (!current.isRecording) break
+
                 val updatedElapsed = current.elapsedSeconds + 1
                 val updatedState = current.copy(elapsedSeconds = updatedElapsed)
                 _recordingState.value = updatedState
 
                 if (updatedElapsed >= updatedState.targetDurationSeconds) {
-                    // Stop service clip when auto limit reached
-                    dashcamStop(context.applicationContext)
-                    stopRecording(context, RecordingStopReason.AUTO)
+                    // Auto-stop: update state + persist clip
+                    stopRecording(context.applicationContext, RecordingStopReason.AUTO)
                     break
                 }
             }
@@ -215,6 +230,7 @@ class ViewModel : androidx.lifecycle.ViewModel() {
         // --- keep your existing state persistence logic below ---
         recordingJob?.cancel()
         recordingJob = null
+
         val current = _recordingState.value
         val elapsed = max(current.elapsedSeconds, 1)
         val startedAt = currentStartTimestamp ?: System.currentTimeMillis()
@@ -232,6 +248,7 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             autoStopped = reason == RecordingStopReason.AUTO,
             lastSavedClipKind = clipKind
         )
+
         val clip = RecordingClip(
             id = startedAt,
             fileName = "clip-$startedAt.mp4",
@@ -240,24 +257,34 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             kind = clipKind,
             uploadStatus = ClipUploadStatus.SYNCED
         )
+
         currentStartTimestamp = null
         recordingContext = null
-        viewModelScope.launch { addClipInternal(context.applicationContext, clip) }
+
+        viewModelScope.launch {
+            addClipInternal(context.applicationContext, clip)
+        }
     }
     // -----------------------------------
 
 
     fun manualClip(context: Context) {
+        // If you later add a separate “save current segment” button,
+        // you might want different semantics. For now it’s the same as manual stop.
         stopRecording(context, RecordingStopReason.MANUAL_CLIP)
     }
 
     fun acknowledgeAutoStop() {
         val current = _recordingState.value
         if (current.autoStopped || current.lastSavedClipKind != null) {
-            _recordingState.value = current.copy(autoStopped = false, lastSavedClipKind = null)
+            _recordingState.value = current.copy(
+                autoStopped = false,
+                lastSavedClipKind = null
+            )
         }
     }
 
+    // ---- Clips management ----
     fun deleteClips(context: Context, clipIds: Set<Long>) {
         if (clipIds.isEmpty()) return
         val appContext = context.applicationContext
@@ -337,5 +364,40 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             array.put(obj)
         }
         prefs.edit().putString(KEY_CLIPS, array.toString()).apply()
+    }
+}
+
+class EmergencyContactViewModel(val repo: EmergencyContactRepository) : ViewModel() {
+
+    var name by mutableStateOf("")
+    var phone by mutableStateOf("")
+    var isLoaded by mutableStateOf(false)
+
+    init {
+        viewModelScope.launch {
+            val contact = repo.getContact()
+            if (contact != null) {
+                name = contact.name
+                phone = contact.phone
+            }
+            isLoaded = true
+        }
+    }
+
+    fun saveContact() {
+        viewModelScope.launch {
+            repo.saveContact(
+                EmergencyContact(
+                    id = 1,
+                    name = name,
+                    phone = phone
+                )
+            )
+        }
+    }
+
+    fun clearChanges(original: EmergencyContact?) {
+        name = original?.name ?: ""
+        phone = original?.phone ?: ""
     }
 }

@@ -1,6 +1,9 @@
 package com.cs407.roadlens.ui.screen
 
 import android.Manifest
+import android.content.ContentValues
+import android.os.Build
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,6 +11,13 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.content.PermissionChecker
+import androidx.core.content.PermissionChecker.PERMISSION_GRANTED
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cs407.roadlens.viewmodel.ClipKind
@@ -39,30 +51,36 @@ import com.cs407.roadlens.viewmodel.ViewModel
 fun RecordingScreen(
     uiState: RecordingUiState,
     cameraAllowed: Boolean = true,
-    accelActive: Boolean = true,
+    accelActive: Boolean = true, // currently unused but kept
     onToggleRecording: () -> Unit,
     onManualSave: () -> Unit,
     onAutoStopAcknowledged: () -> Unit = {},
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
+    // called when CameraX VideoCapture is created
+    onBindVideoCapture: (VideoCapture<Recorder>) -> Unit = {}
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
-    // Snackbars for auto-stop / manual save
+    // Toast whenever clip saved + handle auto-stop handshake
     LaunchedEffect(uiState.autoStopped, uiState.lastSavedClipKind) {
-        val message = when {
-            uiState.autoStopped ->
-                "Recording saved after reaching ${formatDurationLabel(uiState.targetDurationSeconds)}"
-            uiState.lastSavedClipKind == ClipKind.MANUAL -> "Manual clip saved"
-            uiState.lastSavedClipKind == ClipKind.LOOP -> "Recording saved"
+        val message = when (uiState.lastSavedClipKind) {
+            ClipKind.MANUAL -> "Manual clip saved"
+            ClipKind.LOOP -> "${formatDurationLabel(uiState.targetDurationSeconds)} clip saved"
             else -> null
         }
+
         if (message != null) {
-            snackbarHostState.showSnackbar(message)
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+
+        if (uiState.autoStopped) {
+            // ViewModel says "auto stopped" → let route stop CameraX + clear flags
             onAutoStopAcknowledged()
         }
     }
 
-    // If permission revoked while recording, stop
+    // If permission revoked while recording, force stop
     LaunchedEffect(cameraAllowed, uiState.isRecording) {
         if (!cameraAllowed && uiState.isRecording) onToggleRecording()
     }
@@ -83,10 +101,10 @@ fun RecordingScreen(
                     .padding(12.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                // Show Preview only when NOT recording (service owns camera while recording)
-                if (!uiState.isRecording) {
+                if (cameraAllowed) {
                     CameraPreviewBox(
-                        modifier = Modifier.matchParentSize()
+                        modifier = Modifier.matchParentSize(),
+                        onVideoCaptureCreated = onBindVideoCapture
                     )
                 }
 
@@ -155,7 +173,7 @@ fun RecordingScreen(
                         )
                         if (uiState.isRecording) {
                             Text(
-                                text = "Auto stop at ${formatDurationLabel(uiState.targetDurationSeconds)}",
+                                text = "Saving ${formatDurationLabel(uiState.targetDurationSeconds)} clips",
                                 color = Color(0xFFCBD5F5),
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -179,17 +197,8 @@ fun RecordingScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("ACCEL", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                if (accelActive) "Active" else "Paused",
-                                color = if (accelActive) Color(0xFF16A34A) else Color.Gray,
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-
                         val recordEnabled = cameraAllowed
                         Box(
                             modifier = Modifier
@@ -214,19 +223,6 @@ fun RecordingScreen(
                                 fontSize = 22.sp
                             )
                         }
-
-                        Column(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable(enabled = cameraAllowed && uiState.isRecording) { onManualSave() }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            val manualColor =
-                                if (cameraAllowed && uiState.isRecording) Color(0xFFEA4335) else Color(0xFFEA4335).copy(alpha = 0.4f)
-                            Text("MANUAL", color = manualColor, fontWeight = FontWeight.SemiBold)
-                            Text("Save Clip", color = manualColor, style = MaterialTheme.typography.labelMedium)
-                        }
                     }
 
                     if (!cameraAllowed) {
@@ -244,7 +240,7 @@ fun RecordingScreen(
     }
 }
 
-/** Route used by your NavGraph */
+/** Route used by NavGraph */
 @Composable
 fun RecordingRoute(
     vm: ViewModel = viewModel(),
@@ -253,61 +249,160 @@ fun RecordingRoute(
     val ctx = LocalContext.current
     val ui by vm.recordingState.collectAsState()
 
+    // CameraX video pieces
+    var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
+
+    fun startVideoRecording() {
+        val vc = videoCapture ?: return
+
+        val name = "RoadLens_${System.currentTimeMillis()}"
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, "$name.mp4")
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/RoadLens")
+            }
+        }
+
+        val outputOptions = MediaStoreOutputOptions.Builder(
+            ctx.contentResolver,
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        ).setContentValues(contentValues).build()
+
+        val prepared = videoCapture!!.output
+            .prepareRecording(ctx, outputOptions)
+            .apply {
+                val audioGranted =
+                    PermissionChecker.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PERMISSION_GRANTED
+                if (audioGranted) {
+                    withAudioEnabled()
+                }
+            }
+
+        activeRecording = prepared.start(ContextCompat.getMainExecutor(ctx)) { event ->
+            when (event) {
+                is VideoRecordEvent.Finalize -> {
+                    if (!event.hasError()) {
+                        Toast.makeText(
+                            ctx,
+                            "Saved to gallery: ${event.outputResults.outputUri}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            ctx,
+                            "Recording error: ${event.error}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    activeRecording = null
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun stopVideoRecording() {
+        activeRecording?.stop()
+        activeRecording = null
+    }
+
     RecordingScreen(
         uiState = ui,
         cameraAllowed = vm.settings.cameraGranted,
         onToggleRecording = {
-            if (ui.isRecording) vm.stopRecording(ctx, RecordingStopReason.MANUAL)
-            else vm.startRecording(ctx)
+            if (ui.isRecording) {
+                // manual stop
+                stopVideoRecording()
+                vm.stopRecording(ctx, RecordingStopReason.MANUAL)
+            } else {
+                // start
+                startVideoRecording()
+                vm.startRecording(ctx)
+            }
         },
         onManualSave = { vm.manualClip(ctx) },
-        onAutoStopAcknowledged = { vm.acknowledgeAutoStop() },
-        onBack = onBack
+        onAutoStopAcknowledged = {
+            // ViewModel auto-stopped → finalize CameraX recording, then clear autoStopped flag
+            stopVideoRecording()
+            vm.acknowledgeAutoStop()
+        },
+        onBack = onBack,
+        onBindVideoCapture = { vc -> videoCapture = vc }
     )
 }
 
-/** Minimal CameraX preview with runtime permission + error toasts */
+/** CameraX preview + wiring up VideoCapture */
 @Composable
-private fun CameraPreviewBox(modifier: Modifier = Modifier) {
+private fun CameraPreviewBox(
+    modifier: Modifier = Modifier,
+    onVideoCaptureCreated: (VideoCapture<Recorder>) -> Unit
+) {
     val ctx = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(ctx) }
 
-    // Ask CAMERA permission if needed
+    // Ask CAMERA + AUDIO permission if needed
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestMultiplePermissions()
     ) { /* no-op */ }
 
     LaunchedEffect(Unit) {
-        val granted = ContextCompat.checkSelfPermission(
+        val cameraGranted = ContextCompat.checkSelfPermission(
             ctx, Manifest.permission.CAMERA
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!granted) permissionLauncher.launch(Manifest.permission.CAMERA)
+
+        val audioGranted = ContextCompat.checkSelfPermission(
+            ctx, Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!cameraGranted || !audioGranted) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.RECORD_AUDIO
+                )
+            )
+        }
     }
 
     AndroidView(factory = { previewView }, modifier = modifier)
 
-    // Bind Preview use-case
+    // Bind Preview + VideoCapture
     DisposableEffect(Unit) {
         val future = ProcessCameraProvider.getInstance(ctx)
         val listener = Runnable {
             try {
                 val provider = future.get()
+
                 val preview = Preview.Builder().build().also { p ->
                     p.setSurfaceProvider(previewView.surfaceProvider)
                 }
+
+                val recorder = Recorder.Builder()
+                    .setQualitySelector(QualitySelector.from(Quality.HD))
+                    .build()
+
+                val videoCapture = VideoCapture.withOutput(recorder)
+
                 provider.unbindAll()
                 provider.bindToLifecycle(
                     lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview
+                    preview,
+                    videoCapture
                 )
+
+                onVideoCaptureCreated(videoCapture)
             } catch (t: Throwable) {
                 Toast.makeText(ctx, "Camera bind failed: ${t.message}", Toast.LENGTH_LONG).show()
             }
         }
         future.addListener(listener, ContextCompat.getMainExecutor(ctx))
-        onDispose { /* keep bound while visible */ }
+        onDispose {
+            // LifecycleOwner will handle cleanup
+        }
     }
 }
 
@@ -324,7 +419,8 @@ private fun formatDurationLabel(totalSeconds: Int): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return if (minutes > 0) {
-        if (seconds == 0) String.format("%d min", minutes) else String.format("%d:%02d min", minutes, seconds)
+        if (seconds == 0) String.format("%d min", minutes)
+        else String.format("%d:%02d min", minutes, seconds)
     } else {
         String.format("%d sec", seconds)
     }

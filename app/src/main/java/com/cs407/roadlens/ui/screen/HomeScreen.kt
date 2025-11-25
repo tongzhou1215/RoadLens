@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Contacts
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Settings
@@ -49,6 +50,7 @@ fun HomeScreen(
     onOpenAppSettings: () -> Unit,
     onViewAlbum: () -> Unit,
     onSettings: () -> Unit,
+    onContacts: () -> Unit,
 ) {
     var showPermissionDialog by remember { mutableStateOf(false) }
 
@@ -114,6 +116,20 @@ fun HomeScreen(
                 }
 
                 OutlinedButton(
+                    onClick = onContacts,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Icon(Icons.Rounded.Contacts, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(text = "Emergency Contacts", style = MaterialTheme.typography.titleMedium)
+                }
+
+                OutlinedButton(
                     onClick = onSettings,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -126,6 +142,7 @@ fun HomeScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(text = "Settings", style = MaterialTheme.typography.titleMedium)
                 }
+
             }
 
             CameraStatusBanner(cameraGranted = cameraGranted)
