@@ -37,8 +37,7 @@ data class AppSettings(
     val locationGranted: Boolean = false,
     val saveGps: Boolean = false,
     val loopDuration: String = "1 Minute",
-    val crashSensitivity: Float = 0.25f,
-    val emergencyContact: String = ""
+    val crashSensitivity: Float = 0.25f
 )
 
 // UI state for recording
@@ -140,7 +139,6 @@ class ViewModel : androidx.lifecycle.ViewModel() {
     }
 
     fun setCrashSensitivity(v: Float) { settings = settings.copy(crashSensitivity = v) }
-    fun setEmergencyContact(v: String) { settings = settings.copy(emergencyContact = v) }
 
     // ---- Initialization for clips ----
     fun ensureInitialized(context: Context) {

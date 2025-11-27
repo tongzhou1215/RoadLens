@@ -72,15 +72,12 @@ fun SettingsScreen(
     }
     var durationExpanded by remember { mutableStateOf(false) }
 
-    var emergencyContact by rememberSaveable { mutableStateOf(sanitizedCurrent.emergencyContact) }
-
     // 如果外部 currentSettings 变化，同步表单
     LaunchedEffect(sanitizedCurrent) {
         grantLocation = sanitizedCurrent.locationGranted
         saveGps = sanitizedCurrent.saveGps
         crashSensitivityString = floatToSensitivityString(sanitizedCurrent.crashSensitivity) // Sync new state
         loopDuration = sanitizedCurrent.loopDuration.takeIf { it in durationOptions } ?: durationOptions.first()
-        emergencyContact = sanitizedCurrent.emergencyContact
     }
 
     val pendingSettings = remember(
@@ -88,7 +85,6 @@ fun SettingsScreen(
         saveGps,
         loopDuration,
         crashSensitivityString, // Depend on string state
-        emergencyContact,
         cameraPermissionGranted
     ) {
         AppSettings(
@@ -97,9 +93,8 @@ fun SettingsScreen(
             saveGps = saveGps,
             loopDuration = loopDuration,
             // --- CONVERT STRING BACK TO FLOAT FOR MODEL ---
-            crashSensitivity = sensitivityMap[crashSensitivityString] ?: 0.5f,
+            crashSensitivity = sensitivityMap[crashSensitivityString] ?: 0.5f
             // ----------------------------------------------
-            emergencyContact = emergencyContact
         )
     }
 
@@ -297,23 +292,6 @@ fun SettingsScreen(
                 }
             }
             // -----------------------------------------------------
-
-            item { SectionHeader(title = "Safety") }
-
-            // Emergency Contact
-            item {
-                SettingCard {
-                    Text("Emergency contact", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = emergencyContact,
-                        onValueChange = { emergencyContact = it },
-                        placeholder = { Text("Phone / Name (optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
 
             item { Spacer(Modifier.height(64.dp)) } // 给底部按钮留空间
         }

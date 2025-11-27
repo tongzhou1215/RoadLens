@@ -48,7 +48,7 @@ class DashCamService : LifecycleService() {
     private var segMinutes = 3
     private var withAudio = false
     private var loopActive = false
-    private var crashSensitivity = 0.25f // <-- NEW
+    private var crashSensitivity = CrashSensitivity.MEDIUM // <-- NEW
 
     // Sensor & Location properties
     private lateinit var crashDetector: CrashDetector // <-- NEW
@@ -74,7 +74,9 @@ class DashCamService : LifecycleService() {
             DashCamActions.ACTION_START -> {
                 segMinutes = intent.getIntExtra(DashCamActions.EXTRA_SEG_MIN, segMinutes)
                 withAudio = intent.getBooleanExtra(DashCamActions.EXTRA_AUDIO, withAudio)
-                crashSensitivity = intent.getFloatExtra(DashCamActions.EXTRA_SENSITIVITY, crashSensitivity) // <-- NEW
+                crashSensitivity = mapFloatToSensitivity(
+                    intent.getFloatExtra(DashCamActions.EXTRA_SENSITIVITY, 0.5f)
+                ) // <-- NEW
                 startLoop()
                 startCrashDetection() // <-- NEW
             }
@@ -85,10 +87,12 @@ class DashCamService : LifecycleService() {
             DashCamActions.ACTION_CRASH_DETECTED -> finalizeCurrentSegment(isAccident = true) // <-- NEW
             DashCamActions.ACTION_UPDATE -> {
                 segMinutes = intent.getIntExtra(DashCamActions.EXTRA_SEG_MIN, segMinutes)
-                // apply other updates if needed
-                // If crash sensitivity changes, update the detector immediately
-                // crashSensitivity = intent.getFloatExtra(DashCamActions.EXTRA_SENSITIVITY, crashSensitivity)
-                // crashDetector.start(crashSensitivity)
+                val sensitivity = intent.getFloatExtra(DashCamActions.EXTRA_SENSITIVITY, -1f)
+                if (sensitivity >= 0f) {
+                    crashSensitivity = mapFloatToSensitivity(sensitivity)
+                    stopCrashDetection()
+                    startCrashDetection()
+                }
             }
         }
         return START_STICKY
@@ -153,7 +157,6 @@ class DashCamService : LifecycleService() {
     private fun startLoop() {
         // If already recording, ignore or restart
         if (currentRecording != null) return
-        startCrashDetection() // Ensure crash detection is running
         startNextSegment()
     }
 
@@ -206,8 +209,6 @@ class DashCamService : LifecycleService() {
             showToast("CRITICAL CLIP SAVED (Accident Detected)")
             // TODO: Notify ViewModel about the accident save (e.g., via broadcast/binding)
         }
-    private fun finalizeCurrentSegment() {
-        currentRecording?.stop()
     }
 
     private fun stopLoop() {
@@ -239,7 +240,12 @@ class DashCamService : LifecycleService() {
     private fun timestamp(): String =
         java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
 
+    private fun mapFloatToSensitivity(value: Float): CrashSensitivity = when {
+        value < 0.35f -> CrashSensitivity.LOW
+        value < 0.7f -> CrashSensitivity.MEDIUM
+        else -> CrashSensitivity.HIGH
+    }
+
     private fun mainExecutor() = ContextCompat.getMainExecutor(this)
     private fun mainHandler() = Handler(Looper.getMainLooper())
 }
-

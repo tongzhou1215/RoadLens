@@ -34,9 +34,9 @@ class CrashDetector(
 
     private val speedDropThresholdMps = 4.5 // ≈ 10 MPH drop
 
-    private val sensorManager: SensorManager = context.getSystemService()!!
+    private val sensorManager: SensorManager? = context.getSystemService()
     private val accelerometer: Sensor? =
-        sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
     private val recentSpeeds = mutableListOf<Float>()
     private var lastAccidentTime: Long = 0
@@ -46,6 +46,8 @@ class CrashDetector(
      * Start crash detection with LOW, MEDIUM, or HIGH sensitivity.
      */
     fun start(sensitivity: CrashSensitivity) {
+        val manager = sensorManager ?: return
+
         crashGThreshold = when (sensitivity) {
             CrashSensitivity.LOW -> lowThreshold
             CrashSensitivity.MEDIUM -> mediumThreshold
@@ -53,7 +55,7 @@ class CrashDetector(
         }
 
         accelerometer?.let {
-            sensorManager.registerListener(
+            manager.registerListener(
                 this,
                 it,
                 SensorManager.SENSOR_DELAY_GAME
@@ -62,7 +64,7 @@ class CrashDetector(
     }
 
     fun stop() {
-        sensorManager.unregisterListener(this)
+        sensorManager?.unregisterListener(this)
         recentSpeeds.clear()
     }
 

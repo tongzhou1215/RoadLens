@@ -80,7 +80,6 @@ fun NavPage(
                     vm.setSaveGps(newSettings.saveGps)
                     vm.setLoopDuration(newSettings.loopDuration)
                     vm.setCrashSensitivity(newSettings.crashSensitivity)
-                    vm.setEmergencyContact(newSettings.emergencyContact)
                     navController.popBackStack()
                 }
             )
@@ -89,7 +88,7 @@ fun NavPage(
         composable("contacts") {
 
             ContactsScreen(
-                viewModel { emergencyContactViewModel },
+                viewModel = emergencyContactViewModel,
                 onBack = { navController.popBackStack() },
             )
 
