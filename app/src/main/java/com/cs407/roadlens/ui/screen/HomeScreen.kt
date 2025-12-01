@@ -1,6 +1,8 @@
 package com.cs407.roadlens.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +35,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -54,95 +58,119 @@ fun HomeScreen(
 ) {
     var showPermissionDialog by remember { mutableStateOf(false) }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    val gradient = Brush.verticalGradient(
+        colors = listOf(Color(0xFF0E1B2C), Color(0xFF122C4F), Color(0xFF0F172A))
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(gradient)
+            .padding(horizontal = 20.dp, vertical = 28.dp)
+    ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 32.dp),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Surface(
+                color = Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(20.dp)
             ) {
-                Text(
-                    text = "Roadlens",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Mobile Dashcam & Accident Reporter",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Roadlens",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFE5E7EB)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Mobile Dashcam & Accident Reporter",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF9CA3AF),
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(
-                    onClick = {
-                        if (cameraGranted) {
-                            onStartRecording()
-                        } else {
-                            showPermissionDialog = true
-                        }
-                    },
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Icon(Icons.Rounded.PlayCircle, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(text = "Start Recording", style = MaterialTheme.typography.titleMedium)
-                }
+                    Button(
+                        onClick = {
+                            if (cameraGranted) {
+                                onStartRecording()
+                            } else {
+                                showPermissionDialog = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF60A5FA),
+                            contentColor = Color(0xFF0B1224)
+                        )
+                    ) {
+                        Icon(Icons.Rounded.PlayCircle, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(text = "Start Recording", style = MaterialTheme.typography.titleMedium)
+                    }
 
-                OutlinedButton(
-                    onClick = onViewAlbum,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Icon(Icons.Rounded.PhotoLibrary, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(text = "View Album", style = MaterialTheme.typography.titleMedium)
-                }
+                    OutlinedButton(
+                        onClick = onViewAlbum,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.White.copy(alpha = 0.05f),
+                            contentColor = Color(0xFFE5E7EB)
+                        )
+                    ) {
+                        Icon(Icons.Rounded.PhotoLibrary, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(text = "View Album", style = MaterialTheme.typography.titleMedium)
+                    }
 
-                OutlinedButton(
-                    onClick = onContacts,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Icon(Icons.Rounded.Contacts, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(text = "Emergency Contacts", style = MaterialTheme.typography.titleMedium)
-                }
+                    OutlinedButton(
+                        onClick = onContacts,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.White.copy(alpha = 0.05f),
+                            contentColor = Color(0xFFE5E7EB)
+                        )
+                    ) {
+                        Icon(Icons.Rounded.Contacts, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(text = "Emergency Contacts", style = MaterialTheme.typography.titleMedium)
+                    }
 
-                OutlinedButton(
-                    onClick = onSettings,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Icon(Icons.Rounded.Settings, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(text = "Settings", style = MaterialTheme.typography.titleMedium)
+                    OutlinedButton(
+                        onClick = onSettings,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.White.copy(alpha = 0.05f),
+                            contentColor = Color(0xFFE5E7EB)
+                        )
+                    ) {
+                        Icon(Icons.Rounded.Settings, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(text = "Settings", style = MaterialTheme.typography.titleMedium)
+                    }
                 }
-
             }
 
             CameraStatusBanner(cameraGranted = cameraGranted)
@@ -186,15 +214,15 @@ fun HomeScreen(
 @Composable
 private fun CameraStatusBanner(cameraGranted: Boolean) {
     val (icon, label, tint) = if (cameraGranted) {
-        Triple(Icons.Rounded.CheckCircle, "Camera permission granted", MaterialTheme.colorScheme.primary)
+        Triple(Icons.Rounded.CheckCircle, "Camera permission granted", Color(0xFF34D399))
     } else {
-        Triple(Icons.Rounded.WarningAmber, "Camera permission not granted", MaterialTheme.colorScheme.error)
+        Triple(Icons.Rounded.WarningAmber, "Camera permission not granted", Color(0xFFFBBF24))
     }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
+        color = Color.White.copy(alpha = 0.06f)
     ) {
         Row(
             modifier = Modifier
@@ -207,7 +235,7 @@ private fun CameraStatusBanner(cameraGranted: Boolean) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = Color(0xFFE5E7EB)
             )
         }
     }

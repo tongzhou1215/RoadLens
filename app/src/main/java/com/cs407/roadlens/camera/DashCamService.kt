@@ -1,16 +1,20 @@
 package com.cs407.roadlens.camera
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.os.Looper
-import android.provider.MediaStore
+import android.content.pm.PackageManager
 import android.location.LocationListener
 import android.location.LocationManager
-import android.Manifest
-import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
+import android.util.Log
+import android.widget.Toast
+import androidx.annotation.RequiresPermission
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
@@ -23,22 +27,17 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import androidx.core.os.postDelayed
 import androidx.lifecycle.LifecycleService
-import android.os.Handler
-import android.util.Log
-import android.widget.Toast
-import androidx.annotation.RequiresPermission
 
 object DashCamActions {
     const val ACTION_PREPARE = "dc.PREPARE"
     const val ACTION_START   = "dc.START"
     const val ACTION_STOP    = "dc.STOP"
-    const val ACTION_CRASH_DETECTED = "dc.CRASH_DETECTED" // <-- NEW
+    const val ACTION_CRASH_DETECTED = "dc.CRASH_DETECTED"
     const val ACTION_UPDATE  = "dc.UPDATE_SETTINGS"
     const val EXTRA_SEG_MIN  = "segment_minutes"
     const val EXTRA_AUDIO    = "with_audio"
-    const val EXTRA_SENSITIVITY = "sensitivity" // <-- NEW
+    const val EXTRA_SENSITIVITY = "sensitivity"
 }
 
 class DashCamService : LifecycleService() {
@@ -48,21 +47,26 @@ class DashCamService : LifecycleService() {
     private var segMinutes = 3
     private var withAudio = false
     private var loopActive = false
-    private var crashSensitivity = CrashSensitivity.MEDIUM // <-- NEW
+    private var crashSensitivity = CrashSensitivity.MEDIUM
+
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private var segmentStopRunnable: Runnable? = null
 
     // Sensor & Location properties
-    private lateinit var crashDetector: CrashDetector // <-- NEW
-    private var locationManager: LocationManager? = null // <-- NEW
-    private val locationListener = LocationListener { location -> // <-- NEW
+    private lateinit var crashDetector: CrashDetector
+    private var locationManager: LocationManager? = null
+    private val locationListener = LocationListener { location ->
         crashDetector.onLocationUpdate(location)
     }
 
     override fun onCreate() {
         super.onCreate()
-        // Initialize the Crash Detector, which will call us back via a service intent
-        crashDetector = CrashDetector(this) {
-            // Crash confirmed: immediately send an action to self to finalize the clip
-            startService(Intent(this, DashCamService::class.java).setAction(DashCamActions.ACTION_CRASH_DETECTED))
+        crashDetector = CrashDetector(this) { reason ->
+            showToast("Crash detected: $reason")
+            startService(
+                Intent(this, DashCamService::class.java)
+                    .setAction(DashCamActions.ACTION_CRASH_DETECTED)
+            )
         }
         startInForeground()
     }
@@ -76,15 +80,15 @@ class DashCamService : LifecycleService() {
                 withAudio = intent.getBooleanExtra(DashCamActions.EXTRA_AUDIO, withAudio)
                 crashSensitivity = mapFloatToSensitivity(
                     intent.getFloatExtra(DashCamActions.EXTRA_SENSITIVITY, 0.5f)
-                ) // <-- NEW
+                )
+                loopActive = true
                 startLoop()
-                startCrashDetection() // <-- NEW
+                startCrashDetection()
             }
             DashCamActions.ACTION_STOP -> {
                 stopLoop()
-                stopCrashDetection() // <-- NEW
             }
-            DashCamActions.ACTION_CRASH_DETECTED -> finalizeCurrentSegment(isAccident = true) // <-- NEW
+            DashCamActions.ACTION_CRASH_DETECTED -> finalizeCurrentSegment(isAccident = true)
             DashCamActions.ACTION_UPDATE -> {
                 segMinutes = intent.getIntExtra(DashCamActions.EXTRA_SEG_MIN, segMinutes)
                 val sensitivity = intent.getFloatExtra(DashCamActions.EXTRA_SENSITIVITY, -1f)
@@ -111,7 +115,6 @@ class DashCamService : LifecycleService() {
                 ).build()
             videoCapture = VideoCapture.withOutput(recorder)
 
-            // Bind to lifecycle (no UI preview needed for backend)
             val selector = CameraSelector.DEFAULT_BACK_CAMERA
             cameraProvider.unbindAll()
             cameraProvider.bindToLifecycle(this, selector, videoCapture)
@@ -121,20 +124,17 @@ class DashCamService : LifecycleService() {
     // --- Sensor/Location Methods ---
     @RequiresPermission(anyOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     private fun startCrashDetection() {
-        // Start Accelerometer monitoring
         crashDetector.start(crashSensitivity)
 
-        // Start GPS speed monitoring if permission is granted
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             try {
-                // Request updates every 1 second, with minimal distance change (1m)
                 locationManager?.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
                     1000L,
                     1f,
                     locationListener,
-                    Looper.getMainLooper() // Specify Looper for callbacks
+                    Looper.getMainLooper()
                 )
             } catch (e: SecurityException) {
                 showToast("Location monitoring failed: Permission missing.")
@@ -147,27 +147,26 @@ class DashCamService : LifecycleService() {
         try {
             locationManager?.removeUpdates(locationListener)
             locationManager = null
-        } catch (e: SecurityException) {
-            // Ignore if permission was revoked while running
+        } catch (_: SecurityException) {
+            // Permission revoked while running; ignore
         }
     }
     // --- End Sensor/Location Methods ---
 
-
     private fun startLoop() {
-        // If already recording, ignore or restart
         if (currentRecording != null) return
+        loopActive = true
         startNextSegment()
     }
 
-
     private fun showToast(msg: String) {
-        Handler(Looper.getMainLooper()).post {
+        mainHandler.post {
             Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun startNextSegment() {
+        if (!loopActive) return
         Log.d("Func Call", "startNextSegment")
         val capture = videoCapture ?: return
         val name = "DashCam_${timestamp()}.mp4"
@@ -176,7 +175,6 @@ class DashCamService : LifecycleService() {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
             put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/DashCam")
-            // TODO: Add GPS coordinates here if 'saveGps' is enabled
         }
         val output = MediaStoreOutputOptions.Builder(
             contentResolver,
@@ -187,39 +185,42 @@ class DashCamService : LifecycleService() {
             if (withAudio) withAudioEnabled()
         }
 
-        // Start recording and schedule a stop at X minutes
         currentRecording = prepared.start(mainExecutor()) { event ->
             if (event is VideoRecordEvent.Finalize) {
-                // Segment saved. Start the next one if still in loop mode.
                 if (isRecordingLoopActive()) startNextSegment()
             }
         }
 
-        // Stop current segment after segMinutes
-        mainHandler().postDelayed({ finalizeCurrentSegment() }, segMinutes * 60_000L)
+        segmentStopRunnable?.let { mainHandler.removeCallbacks(it) }
+        segmentStopRunnable = Runnable { finalizeCurrentSegment() }
+        mainHandler.postDelayed(segmentStopRunnable!!, segMinutes * 60_000L)
     }
 
-    private fun finalizeCurrentSegment(isAccident: Boolean = false) { // <-- UPDATED
+    private fun finalizeCurrentSegment(isAccident: Boolean = false) {
+        segmentStopRunnable?.let { mainHandler.removeCallbacks(it) }
+        segmentStopRunnable = null
+
         currentRecording?.let {
-            // Will trigger VideoRecordEvent.Finalize callback
             it.stop()
             currentRecording = null
         }
         if (isAccident) {
-            showToast("CRITICAL CLIP SAVED (Accident Detected)")
+            loopActive = false
+            stopCrashDetection()
+            showToast("CRITICAL CLIP SAVED (Accident Detected) - recording stopped")
             // TODO: Notify ViewModel about the accident save (e.g., via broadcast/binding)
         }
     }
 
     private fun stopLoop() {
-        // Stop current, don’t chain next
+        loopActive = false
         val wasActive = currentRecording != null
         finalizeCurrentSegment()
         if (wasActive) showToast("Recording saved")
-        stopCrashDetection() // Ensure sensors stop when loop stops
+        stopCrashDetection()
     }
 
-    private fun isRecordingLoopActive() = true // flip to false in stopLoop() if you add a flag
+    private fun isRecordingLoopActive() = loopActive
 
     private fun startInForeground() {
         val chanId = "dashcam_rec"
@@ -247,5 +248,4 @@ class DashCamService : LifecycleService() {
     }
 
     private fun mainExecutor() = ContextCompat.getMainExecutor(this)
-    private fun mainHandler() = Handler(Looper.getMainLooper())
 }

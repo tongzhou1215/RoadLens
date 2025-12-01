@@ -31,7 +31,8 @@ import java.time.format.DateTimeFormatter
 fun AlbumScreen(
     clips: List<RecordingClip>,
     onBack: () -> Unit = {},
-    onDeleteClips: (Set<Long>) -> Unit = {}
+    onDeleteClips: (Set<Long>) -> Unit = {},
+    onOpenClip: (RecordingClip) -> Unit = {}
 ) {
     var selectionMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateListOf<Long>() }
@@ -99,10 +100,11 @@ fun AlbumScreen(
                     AlbumCard(
                         item = clip,
                         selected = isSelected,
-                        selectionMode = selectionMode,
                         onClick = {
                             if (selectionMode) {
                                 if (isSelected) selected.remove(clip.id) else selected.add(clip.id)
+                            } else {
+                                onOpenClip(clip)
                             }
                         }
                     )
@@ -130,7 +132,6 @@ fun AlbumScreen(
 private fun AlbumCard(
     item: RecordingClip,
     selected: Boolean,
-    selectionMode: Boolean,
     onClick: () -> Unit
 ) {
     val (borderColor, badgeBg, titleColor, statusColor) = when (item.kind) {
@@ -145,7 +146,7 @@ private fun AlbumCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable { if (selectionMode) onClick() },
+            .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         color = badgeBg,
         tonalElevation = if (selected) 4.dp else 1.dp,

@@ -1,10 +1,17 @@
 package com.cs407.roadlens.viewmodel
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat.startForegroundService
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cs407.roadlens.camera.DashCamActions
+import com.cs407.roadlens.camera.DashCamService
+import com.cs407.roadlens.data.local.entities.EmergencyContact
+import com.cs407.roadlens.data.repository.EmergencyContactRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -19,24 +26,13 @@ import org.json.JSONObject
 import java.io.File
 import kotlin.math.max
 import kotlin.time.Duration.Companion.seconds
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import android.content.Intent
-import androidx.core.content.ContextCompat.startForegroundService
-import com.cs407.roadlens.camera.DashCamActions
-import com.cs407.roadlens.camera.DashCamService
-import com.cs407.roadlens.data.local.entities.EmergencyContact
-import com.cs407.roadlens.data.repository.EmergencyContactRepository
 
 // Global App Settings
 data class AppSettings(
     val cameraGranted: Boolean = false,
     val locationGranted: Boolean = false,
     val saveGps: Boolean = false,
-    val loopDuration: String = "1 Minute",
+    val loopDuration: String = "30 Seconds",
     val crashSensitivity: Float = 0.25f
 )
 
@@ -49,7 +45,6 @@ data class RecordingUiState(
     val lastSavedClipKind: ClipKind? = null
 )
 
-
 data class RecordingClip(
     val id: Long,
     val fileName: String,
@@ -59,24 +54,17 @@ data class RecordingClip(
     val uploadStatus: ClipUploadStatus
 )
 
-// --- UPDATED ENUMS ---
-enum class ClipKind { LOOP, MANUAL, ACCIDENT } // ADDED ACCIDENT
+enum class ClipKind { LOOP, MANUAL, ACCIDENT }
 enum class ClipUploadStatus { LOCAL_ONLY, SYNCED }
-enum class RecordingStopReason { MANUAL, MANUAL_CLIP, AUTO, ACCIDENT } // ADDED ACCIDENT
-// ---------------------
+enum class RecordingStopReason { MANUAL, MANUAL_CLIP, AUTO, ACCIDENT }
 
-// Parse loop duration option into seconds
-private fun parseLoopDuration(option: String): Int = when (option) {
-    "30 Seconds" -> 30
-    "1 Minute" -> 60
-    "3 Minutes" -> 3 * 60
-    "5 Minutes" -> 5 * 60
-    else -> option.toIntOrNull() ?: 60
-}
+// Always use 30-second segments for dashcam loops
+private fun parseLoopDuration(@Suppress("UNUSED_PARAMETER") option: String): Int = 30
 
 private const val PREFS_NAME = "recording_clips"
 private const val KEY_CLIPS = "clips"
 private const val RECORDINGS_DIR = "recordings"
+private const val MAX_CLIPS = 5
 
 // Holds settings, exposes Recording UI state + list of local clips
 private fun dashcamPrepare(context: Context) {
@@ -86,19 +74,17 @@ private fun dashcamPrepare(context: Context) {
     )
 }
 
-// --- UPDATED HELPER TO PASS CRASH SENSITIVITY ---
 private fun dashcamStart(context: Context, segMinutes: Int, withAudio: Boolean, crashSensitivity: Float) {
-    dashcamPrepare(context) // safe to call repeatedly
+    dashcamPrepare(context)
     startForegroundService(
         context,
         Intent(context, DashCamService::class.java)
             .setAction(DashCamActions.ACTION_START)
             .putExtra(DashCamActions.EXTRA_SEG_MIN, segMinutes)
             .putExtra(DashCamActions.EXTRA_AUDIO, withAudio)
-            .putExtra(DashCamActions.EXTRA_SENSITIVITY, crashSensitivity) // PASS SENSITIVITY
+            .putExtra(DashCamActions.EXTRA_SENSITIVITY, crashSensitivity)
     )
 }
-// ------------------------------------------------
 
 private fun dashcamStop(context: Context) {
     context.startService(
@@ -107,7 +93,7 @@ private fun dashcamStop(context: Context) {
 }
 
 //Holds Settings state; Exposes Recording UI state + list of local clips
-class ViewModel : androidx.lifecycle.ViewModel() {
+class ViewModel : ViewModel() {
 
     var settings by mutableStateOf(AppSettings())
         private set
@@ -124,6 +110,7 @@ class ViewModel : androidx.lifecycle.ViewModel() {
     private var currentStartTimestamp: Long? = null
     private var recordingContext: Context? = null
     private var initialized = false
+    private var continueLoop = false
 
     // ---- Settings setters ----
     fun setCameraGranted(v: Boolean) { settings = settings.copy(cameraGranted = v) }
@@ -147,32 +134,45 @@ class ViewModel : androidx.lifecycle.ViewModel() {
         val appContext = context.applicationContext
         viewModelScope.launch {
             val stored = withContext(Dispatchers.IO) { loadStoredClips(appContext) }
-            _clips.value = stored
+            val trimmed = stored.take(MAX_CLIPS)
+            _clips.value = trimmed
+
+            // Remove anything older than our retained window to keep storage bounded.
+            val toDelete = stored.drop(MAX_CLIPS).map { it.id }.toSet()
+            if (toDelete.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    deleteClipFiles(appContext, toDelete)
+                    persistClipList(appContext, trimmed)
+                }
+            }
         }
     }
 
-    // ---- Recording control (timer) ----
+    // ---- Recording control (looped segmentation) ----
     fun startRecording(context: Context) {
         if (_recordingState.value.isRecording) return
+        continueLoop = true
+        beginRecordingSegment(context.applicationContext)
+    }
 
-        // Kick off the foreground service recording
-        val segMinutes = parseLoopDuration(settings.loopDuration) / 60
-        val useAudio = settings.cameraGranted
+    private fun beginRecordingSegment(context: Context) {
+        recordingJob?.cancel()
+        recordingJob = null
 
-        // --- PASS CRASH SENSITIVITY IN START ---
-        dashcamStart(
-            context.applicationContext,
-            segMinutes = max(segMinutes, 1),
-            withAudio = useAudio,
-            crashSensitivity = settings.crashSensitivity // Pass the setting
-        )
-        // ----------------------------------------
-
-        // --- your existing UI state timer logic below ---
         val targetSeconds = parseLoopDuration(settings.loopDuration)
+        val segMinutes = max(targetSeconds / 60, 1)
+        val useAudio = settings.cameraGranted
         val startTimestamp = System.currentTimeMillis()
+
         currentStartTimestamp = startTimestamp
         recordingContext = context.applicationContext
+
+        dashcamStart(
+            context.applicationContext,
+            segMinutes = segMinutes,
+            withAudio = useAudio,
+            crashSensitivity = settings.crashSensitivity
+        )
 
         _recordingState.value = RecordingUiState(
             isRecording = true,
@@ -182,7 +182,6 @@ class ViewModel : androidx.lifecycle.ViewModel() {
             lastSavedClipKind = null
         )
 
-        recordingJob?.cancel()
         recordingJob = viewModelScope.launch {
             while (true) {
                 delay(1.seconds)
@@ -190,42 +189,24 @@ class ViewModel : androidx.lifecycle.ViewModel() {
                 if (!current.isRecording) break
 
                 val updatedElapsed = current.elapsedSeconds + 1
-                val updatedState = current.copy(elapsedSeconds = updatedElapsed)
-                _recordingState.value = updatedState
+                val target = current.targetDurationSeconds
+                _recordingState.value = current.copy(elapsedSeconds = updatedElapsed)
 
-                if (updatedElapsed >= updatedState.targetDurationSeconds) {
-                    // Auto-stop: update state + persist clip
-                    stopRecording(context.applicationContext, RecordingStopReason.AUTO)
+                if (updatedElapsed >= target) {
+                    completeSegment(context, RecordingStopReason.AUTO, restart = true)
                     break
                 }
             }
         }
     }
 
-    // --- NEW: Handle Signal from CrashDetector (via DashCamService) ---
-    fun onAccidentDetected(context: Context) {
-        if (!_recordingState.value.isRecording) return
-
-        // 1. Tell the service to finalize the clip immediately
-        context.startService(
-            Intent(context, DashCamService::class.java)
-                .setAction(DashCamActions.ACTION_CRASH_DETECTED)
-        )
-
-        // 2. Stop recording and persist the UI state
-        stopRecording(context, RecordingStopReason.ACCIDENT)
-    }
-    // -----------------------------------------------------------------
-
-    // --- UPDATED: Stop Recording Logic ---
-    fun stopRecording(context: Context, reason: RecordingStopReason) {
-        if (!_recordingState.value.isRecording) return
-
-        // Tell the service to stop the current segment (and break the loop)
-        // Note: For ACCIDENT, the ACTION_CRASH_DETECTED intent might already be in queue/running.
+    private fun completeSegment(
+        context: Context,
+        reason: RecordingStopReason,
+        restart: Boolean
+    ) {
         dashcamStop(context.applicationContext)
 
-        // --- keep your existing state persistence logic below ---
         recordingJob?.cancel()
         recordingJob = null
 
@@ -233,18 +214,20 @@ class ViewModel : androidx.lifecycle.ViewModel() {
         val elapsed = max(current.elapsedSeconds, 1)
         val startedAt = currentStartTimestamp ?: System.currentTimeMillis()
 
-        // UPDATED: Use a when expression to determine clip kind, including ACCIDENT
         val clipKind = when (reason) {
             RecordingStopReason.MANUAL_CLIP -> ClipKind.MANUAL
-            RecordingStopReason.ACCIDENT -> ClipKind.ACCIDENT // NEW LOGIC
+            RecordingStopReason.ACCIDENT -> ClipKind.ACCIDENT
             else -> ClipKind.LOOP
         }
+
+        val showAutoStopped = reason == RecordingStopReason.AUTO && !restart
+        val lastKind = if (restart) null else clipKind
 
         _recordingState.value = current.copy(
             isRecording = false,
             elapsedSeconds = 0,
-            autoStopped = reason == RecordingStopReason.AUTO,
-            lastSavedClipKind = clipKind
+            autoStopped = showAutoStopped,
+            lastSavedClipKind = lastKind
         )
 
         val clip = RecordingClip(
@@ -262,13 +245,36 @@ class ViewModel : androidx.lifecycle.ViewModel() {
         viewModelScope.launch {
             addClipInternal(context.applicationContext, clip)
         }
-    }
-    // -----------------------------------
 
+        if (restart && continueLoop) {
+            viewModelScope.launch {
+                // Small pause to let the service finalize before restarting.
+                delay(250)
+                if (continueLoop) {
+                    beginRecordingSegment(context)
+                }
+            }
+        }
+    }
+
+    fun onAccidentDetected(context: Context) {
+        if (!_recordingState.value.isRecording) return
+
+        context.startService(
+            Intent(context, DashCamService::class.java)
+                .setAction(DashCamActions.ACTION_CRASH_DETECTED)
+        )
+
+        stopRecording(context, RecordingStopReason.ACCIDENT)
+    }
+
+    fun stopRecording(context: Context, reason: RecordingStopReason) {
+        if (!_recordingState.value.isRecording) return
+        continueLoop = false
+        completeSegment(context, reason, restart = false)
+    }
 
     fun manualClip(context: Context) {
-        // If you later add a separate “save current segment” button,
-        // you might want different semantics. For now it’s the same as manual stop.
         stopRecording(context, RecordingStopReason.MANUAL_CLIP)
     }
 
@@ -297,10 +303,22 @@ class ViewModel : androidx.lifecycle.ViewModel() {
     }
 
     private suspend fun addClipInternal(context: Context, clip: RecordingClip) {
-        _clips.update { clips -> listOf(clip) + clips }
+        var evicted: List<RecordingClip> = emptyList()
+        _clips.update { current ->
+            val updated = listOf(clip) + current
+            if (updated.size > MAX_CLIPS) {
+                evicted = updated.drop(MAX_CLIPS)
+                updated.take(MAX_CLIPS)
+            } else {
+                updated
+            }
+        }
         withContext(Dispatchers.IO) {
             ensureClipFileExists(context, clip)
             persistClipList(context, _clips.value)
+            if (evicted.isNotEmpty()) {
+                deleteClipFiles(context, evicted.map { it.id }.toSet())
+            }
         }
     }
 
@@ -344,13 +362,13 @@ class ViewModel : androidx.lifecycle.ViewModel() {
                 )
             )
         }
-        return clips
+        return clips.take(MAX_CLIPS)
     }
 
     private fun persistClipList(context: Context, clips: List<RecordingClip>) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val array = JSONArray()
-        clips.forEach { clip ->
+        clips.take(MAX_CLIPS).forEach { clip ->
             val obj = JSONObject().apply {
                 put("id", clip.id)
                 put("fileName", clip.fileName)
