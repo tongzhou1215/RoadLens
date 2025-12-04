@@ -15,9 +15,10 @@ typealias CrashCallback = () -> Unit
 // Three crash sensitivity modes
 enum class CrashSensitivity {
     LOW,      // Least sensitive (requires strong impact)
-    MEDIUM,   // Balanced
+    MEDIUM,   // Medium Sensitivity
     HIGH      // Most sensitive (triggers more easily)
 }
+
 
 class CrashDetector(
     private val context: Context,
