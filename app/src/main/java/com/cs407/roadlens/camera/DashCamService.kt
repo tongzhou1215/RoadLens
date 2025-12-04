@@ -9,8 +9,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
@@ -35,16 +37,22 @@ object DashCamActions {
     const val ACTION_STOP    = "dc.STOP"
     const val ACTION_CRASH_DETECTED = "dc.CRASH_DETECTED"
     const val ACTION_UPDATE  = "dc.UPDATE_SETTINGS"
-    const val EXTRA_SEG_MIN  = "segment_minutes"
+    const val EXTRA_SEG_MIN  = "segment_minutes" // legacy
+    const val EXTRA_SEG_DURATION_MS = "segment_duration_ms"
     const val EXTRA_AUDIO    = "with_audio"
     const val EXTRA_SENSITIVITY = "sensitivity"
+    const val ACTION_SEGMENT_SAVED = "dc.SEGMENT_SAVED"
+    const val EXTRA_SEG_URI = "segment_uri"
+    const val EXTRA_SEG_NAME = "segment_name"
+    const val EXTRA_SEG_STARTED_AT = "segment_started_at"
+    const val EXTRA_SEG_IS_ACCIDENT = "segment_is_accident"
 }
 
 class DashCamService : LifecycleService() {
     private lateinit var cameraProvider: ProcessCameraProvider
     private var videoCapture: VideoCapture<Recorder>? = null
     private var currentRecording: Recording? = null
-    private var segMinutes = 3
+    private var segmentDurationMs: Long = 180_000L // default 3 minutes
     private var withAudio = false
     private var loopActive = false
     private var crashSensitivity = CrashSensitivity.MEDIUM
@@ -58,6 +66,11 @@ class DashCamService : LifecycleService() {
     private val locationListener = LocationListener { location ->
         crashDetector.onLocationUpdate(location)
     }
+
+    // Track metadata for the current segment so we can broadcast it to the album.
+    private var currentSegmentName: String? = null
+    private var currentSegmentStartedAt: Long = 0L
+    private var currentSegmentAccident: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -76,7 +89,15 @@ class DashCamService : LifecycleService() {
         when (intent?.action) {
             DashCamActions.ACTION_PREPARE -> prepareCamera()
             DashCamActions.ACTION_START -> {
-                segMinutes = intent.getIntExtra(DashCamActions.EXTRA_SEG_MIN, segMinutes)
+                segmentDurationMs = intent.getLongExtra(
+                    DashCamActions.EXTRA_SEG_DURATION_MS,
+                    segmentDurationMs
+                )
+                // Fallback to old extra if present
+                if (segmentDurationMs <= 0) {
+                    val mins = intent.getIntExtra(DashCamActions.EXTRA_SEG_MIN, 3)
+                    segmentDurationMs = (mins.coerceAtLeast(1)) * 60_000L
+                }
                 withAudio = intent.getBooleanExtra(DashCamActions.EXTRA_AUDIO, withAudio)
                 crashSensitivity = mapFloatToSensitivity(
                     intent.getFloatExtra(DashCamActions.EXTRA_SENSITIVITY, 0.5f)
@@ -90,7 +111,8 @@ class DashCamService : LifecycleService() {
             }
             DashCamActions.ACTION_CRASH_DETECTED -> finalizeCurrentSegment(isAccident = true)
             DashCamActions.ACTION_UPDATE -> {
-                segMinutes = intent.getIntExtra(DashCamActions.EXTRA_SEG_MIN, segMinutes)
+                val durationUpdate = intent.getLongExtra(DashCamActions.EXTRA_SEG_DURATION_MS, -1L)
+                if (durationUpdate > 0) segmentDurationMs = durationUpdate
                 val sensitivity = intent.getFloatExtra(DashCamActions.EXTRA_SENSITIVITY, -1f)
                 if (sensitivity >= 0f) {
                     crashSensitivity = mapFloatToSensitivity(sensitivity)
@@ -103,6 +125,11 @@ class DashCamService : LifecycleService() {
     }
 
     private fun prepareCamera() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            showToast("Camera permission required to start recording.")
+            stopSelf()
+            return
+        }
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             cameraProvider = providerFuture.get()
@@ -168,37 +195,81 @@ class DashCamService : LifecycleService() {
     private fun startNextSegment() {
         if (!loopActive) return
         Log.d("Func Call", "startNextSegment")
-        val capture = videoCapture ?: return
+        val capture = videoCapture
+        if (capture == null) {
+            // Camera not ready yet; retry shortly while loop is active.
+            segmentStopRunnable?.let { mainHandler.removeCallbacks(it) }
+            segmentStopRunnable = Runnable { startNextSegment() }
+            mainHandler.postDelayed(segmentStopRunnable!!, 500L)
+            return
+        }
         val name = "DashCam_${timestamp()}.mp4"
+        currentSegmentName = name
+        currentSegmentStartedAt = System.currentTimeMillis()
+        currentSegmentAccident = false
 
         val contentValues = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/DashCam")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/DashCam")
+            }
         }
         val output = MediaStoreOutputOptions.Builder(
             contentResolver,
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         ).setContentValues(contentValues).build()
 
-        val prepared = capture.output.prepareRecording(this, output).apply {
-            if (withAudio) withAudioEnabled()
+        val prepared = try {
+            capture.output.prepareRecording(this, output)
+        } catch (e: Exception) {
+            Log.e("DashCamService", "Failed to prepare recording", e)
+            showToast("Unable to start recording. Check storage permissions.")
+            finalizeCurrentSegment()
+            return
+        }.apply {
+            val hasAudioPermission = ContextCompat.checkSelfPermission(
+                this@DashCamService,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            if (withAudio && hasAudioPermission) {
+                withAudioEnabled()
+            } else if (withAudio && !hasAudioPermission) {
+                showToast("Microphone permission missing; recording without audio.")
+            }
         }
 
         currentRecording = prepared.start(mainExecutor()) { event ->
             if (event is VideoRecordEvent.Finalize) {
+                val outputUri = event.outputResults.outputUri
+                val durationMs = event.recordingStats.recordedDurationNanos / 1_000_000
+                val savedName = currentSegmentName
+                val startedAt = currentSegmentStartedAt
+                if (outputUri != null && savedName != null && startedAt != 0L) {
+                    sendBroadcast(
+                        Intent(DashCamActions.ACTION_SEGMENT_SAVED).apply {
+                            setPackage(packageName)
+                            putExtra(DashCamActions.EXTRA_SEG_URI, outputUri.toString())
+                            putExtra(DashCamActions.EXTRA_SEG_NAME, savedName)
+                            putExtra(DashCamActions.EXTRA_SEG_STARTED_AT, startedAt)
+                            putExtra(DashCamActions.EXTRA_SEG_DURATION_MS, durationMs)
+                            putExtra(DashCamActions.EXTRA_SEG_IS_ACCIDENT, currentSegmentAccident)
+                        }
+                    )
+                }
                 if (isRecordingLoopActive()) startNextSegment()
             }
         }
 
         segmentStopRunnable?.let { mainHandler.removeCallbacks(it) }
         segmentStopRunnable = Runnable { finalizeCurrentSegment() }
-        mainHandler.postDelayed(segmentStopRunnable!!, segMinutes * 60_000L)
+        mainHandler.postDelayed(segmentStopRunnable!!, segmentDurationMs)
     }
 
     private fun finalizeCurrentSegment(isAccident: Boolean = false) {
         segmentStopRunnable?.let { mainHandler.removeCallbacks(it) }
         segmentStopRunnable = null
+        currentSegmentAccident = isAccident
 
         currentRecording?.let {
             it.stop()
@@ -223,6 +294,17 @@ class DashCamService : LifecycleService() {
     private fun isRecordingLoopActive() = loopActive
 
     private fun startInForeground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            showToast("Enable notifications to start dashcam recording.")
+            stopSelf()
+            return
+        }
+
         val chanId = "dashcam_rec"
         val chanName = "DashCam Recording"
         val manager = getSystemService(NotificationManager::class.java)
@@ -235,7 +317,13 @@ class DashCamService : LifecycleService() {
             .setSmallIcon(android.R.drawable.presence_video_online)
             .setOngoing(true)
             .build()
-        startForeground(42, notif)
+        try {
+            startForeground(42, notif)
+        } catch (e: Exception) {
+            Log.e("DashCamService", "startForeground failed", e)
+            showToast("Unable to start recording. Please enable notifications.")
+            stopSelf()
+        }
     }
 
     private fun timestamp(): String =

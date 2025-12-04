@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -21,10 +22,16 @@ import com.cs407.roadlens.navigation.NavPage
 class MainActivity : ComponentActivity() {
 
     private val cameraPermission = Manifest.permission.CAMERA
+    private val locationPermission = Manifest.permission.ACCESS_FINE_LOCATION
+    private val notificationPermission = Manifest.permission.POST_NOTIFICATIONS
 
     private var cameraPermissionGranted by mutableStateOf(false)
     private var hasRequestedCameraPermission by mutableStateOf(false)
     private var cameraPermissionPermanentlyDenied by mutableStateOf(false)
+
+    private var locationPermissionGranted by mutableStateOf(false)
+    private var hasRequestedLocationPermission by mutableStateOf(false)
+    private var locationPermissionPermanentlyDenied by mutableStateOf(false)
 
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -36,10 +43,26 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private val requestLocationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            hasRequestedLocationPermission = true
+            locationPermissionGranted = granted
+            locationPermissionPermanentlyDenied =
+                !granted && !shouldShowRequestPermissionRationale(locationPermission)
+            if (!granted) {
+                Toast.makeText(this, "Location permission is required to tag GPS data", Toast.LENGTH_LONG).show()
+            }
+        }
+
+    private val requestNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         refreshCameraPermissionState()
+        refreshLocationPermissionState()
+        requestNotificationPermissionIfNeeded()
         setContent {
             RoadLensTheme {
                 val navController = rememberNavController()
@@ -47,7 +70,10 @@ class MainActivity : ComponentActivity() {
                     navController = navController,
                     cameraPermissionGranted = cameraPermissionGranted,
                     cameraPermissionPermanentlyDenied = cameraPermissionPermanentlyDenied,
+                    locationPermissionGranted = locationPermissionGranted,
+                    locationPermissionPermanentlyDenied = locationPermissionPermanentlyDenied,
                     onRequestCameraPermission = { requestCameraPermission.launch(cameraPermission) },
+                    onRequestLocationPermission = { requestLocationPermission.launch(locationPermission) },
                     onOpenAppSettings = { openAppSettings() }
                 )
             }
@@ -57,6 +83,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshCameraPermissionState()
+        refreshLocationPermissionState()
     }
 
     private fun refreshCameraPermissionState() {
@@ -66,8 +93,23 @@ class MainActivity : ComponentActivity() {
             !granted && hasRequestedCameraPermission && !shouldShowRequestPermissionRationale(cameraPermission)
     }
 
+    private fun refreshLocationPermissionState() {
+        val granted = hasPermission(locationPermission)
+        locationPermissionGranted = granted
+        locationPermissionPermanentlyDenied =
+            !granted && hasRequestedLocationPermission && !shouldShowRequestPermissionRationale(locationPermission)
+    }
+
     private fun hasPermission(p: String): Boolean =
         ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !hasPermission(notificationPermission)
+        ) {
+            requestNotificationPermission.launch(notificationPermission)
+        }
+    }
 
     private fun openAppSettings() {
         val intent = Intent(

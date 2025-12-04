@@ -43,14 +43,20 @@ fun SettingsScreen(
     currentSettings: AppSettings,
     cameraPermissionGranted: Boolean,
     cameraPermissionPermanentlyDenied: Boolean,
+    locationPermissionGranted: Boolean,
+    locationPermissionPermanentlyDenied: Boolean,
     onRequestCameraPermission: () -> Unit,
+    onRequestLocationPermission: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onBack: () -> Unit = {},
     onSave: (AppSettings) -> Unit = {}
 ) {
     // ---- Local UI state ----
-    val sanitizedCurrent = remember(currentSettings, cameraPermissionGranted) {
-        currentSettings.copy(cameraGranted = cameraPermissionGranted)
+    val sanitizedCurrent = remember(currentSettings, cameraPermissionGranted, locationPermissionGranted) {
+        currentSettings.copy(
+            cameraGranted = cameraPermissionGranted,
+            locationGranted = currentSettings.locationGranted && locationPermissionGranted
+        )
     }
 
     var grantLocation by rememberSaveable { mutableStateOf(sanitizedCurrent.locationGranted) }
@@ -73,7 +79,6 @@ fun SettingsScreen(
     }
     var durationExpanded by remember { mutableStateOf(false) }
 
-    // 如果外部 currentSettings 变化，同步表单
     LaunchedEffect(sanitizedCurrent) {
         grantLocation = sanitizedCurrent.locationGranted
         saveGps = sanitizedCurrent.saveGps
@@ -86,12 +91,13 @@ fun SettingsScreen(
         saveGps,
         loopDuration,
         crashSensitivityString, // Depend on string state
-        cameraPermissionGranted
+        cameraPermissionGranted,
+        locationPermissionGranted
     ) {
         AppSettings(
             cameraGranted = cameraPermissionGranted,
-            locationGranted = grantLocation,
-            saveGps = saveGps,
+            locationGranted = grantLocation && locationPermissionGranted,
+            saveGps = saveGps && grantLocation && locationPermissionGranted,
             loopDuration = loopDuration,
             // --- CONVERT STRING BACK TO FLOAT FOR MODEL ---
             crashSensitivity = sensitivityMap[crashSensitivityString] ?: 0.5f
@@ -187,12 +193,40 @@ fun SettingsScreen(
             // Location
             item {
                 SettingCard {
+                    val locationMessage = when {
+                        locationPermissionGranted -> "Location access is enabled for GPS tagging."
+                        locationPermissionPermanentlyDenied -> "Location is blocked. Enable it in system settings."
+                        else -> "Allow GPS to detect crashes and tag clips."
+                    }
+
                     SettingToggleRow(
                         title = "Location",
-                        subtitle = "Allow RoadLens to access GPS for tagging recordings",
+                        subtitle = locationMessage,
                         checked = grantLocation,
-                        onToggle = { grantLocation = it }
+                        onToggle = { enabled ->
+                            if (enabled) {
+                                if (locationPermissionGranted) {
+                                    grantLocation = true
+                                } else {
+                                    onRequestLocationPermission()
+                                }
+                            } else {
+                                grantLocation = false
+                            }
+                        }
                     )
+
+                    if (!locationPermissionGranted) {
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = if (locationPermissionPermanentlyDenied) onOpenAppSettings else onRequestLocationPermission,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(imageVector = Icons.Rounded.Info, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (locationPermissionPermanentlyDenied) "Open App Settings" else "Grant Location")
+                        }
+                    }
                 }
             }
 
@@ -202,9 +236,23 @@ fun SettingsScreen(
                     SettingToggleRow(
                         title = "Save GPS with clips",
                         subtitle = "Attach GPS coordinates when clips are exported",
-                        checked = saveGps,
-                        onToggle = { saveGps = it }
+                        checked = saveGps && grantLocation && locationPermissionGranted,
+                        onToggle = { enabled ->
+                            if (enabled && grantLocation && locationPermissionGranted) {
+                                saveGps = true
+                            } else if (!enabled) {
+                                saveGps = false
+                            }
+                        }
                     )
+                    if (!locationPermissionGranted || !grantLocation) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Enable location access above to save GPS data with clips.",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             }
 

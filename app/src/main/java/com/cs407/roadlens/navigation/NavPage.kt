@@ -20,7 +20,10 @@ fun NavPage(
     navController: NavHostController,
     cameraPermissionGranted: Boolean,
     cameraPermissionPermanentlyDenied: Boolean,
+    locationPermissionGranted: Boolean,
+    locationPermissionPermanentlyDenied: Boolean,
     onRequestCameraPermission: () -> Unit,
+    onRequestLocationPermission: () -> Unit,
     onOpenAppSettings: () -> Unit
 ) {
     // ONE shared app ViewModel
@@ -33,6 +36,7 @@ fun NavPage(
     // Initialize VM and keep camera permission in sync
     LaunchedEffect(Unit) { vm.ensureInitialized(ctx) }
     LaunchedEffect(cameraPermissionGranted) { vm.setCameraGranted(cameraPermissionGranted) }
+    LaunchedEffect(locationPermissionGranted) { vm.setLocationGranted(locationPermissionGranted) }
 
     val clips by vm.clips.collectAsState()
 
@@ -70,7 +74,10 @@ fun NavPage(
                 currentSettings = vm.settings,
                 cameraPermissionGranted = cameraPermissionGranted,
                 cameraPermissionPermanentlyDenied = cameraPermissionPermanentlyDenied,
+                locationPermissionGranted = locationPermissionGranted,
+                locationPermissionPermanentlyDenied = locationPermissionPermanentlyDenied,
                 onRequestCameraPermission = onRequestCameraPermission,
+                onRequestLocationPermission = onRequestLocationPermission,
                 onOpenAppSettings = onOpenAppSettings,
                 onBack = { navController.popBackStack() },
                 onSave = { newSettings ->
