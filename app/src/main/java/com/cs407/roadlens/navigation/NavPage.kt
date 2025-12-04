@@ -6,7 +6,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.cs407.roadlens.ui.screen.AlbumScreen
 import com.cs407.roadlens.ui.screen.ContactsScreen
 import com.cs407.roadlens.ui.screen.HomeScreen
 import com.cs407.roadlens.ui.screen.RecordingRoute
@@ -33,12 +32,9 @@ fun NavPage(
         factory = EmergencyContactViewModelFactory(ctx.applicationContext)
     )
 
-    // Initialize VM and keep camera permission in sync
-    LaunchedEffect(Unit) { vm.ensureInitialized(ctx) }
+    // Keep camera/location permissions in sync
     LaunchedEffect(cameraPermissionGranted) { vm.setCameraGranted(cameraPermissionGranted) }
     LaunchedEffect(locationPermissionGranted) { vm.setLocationGranted(locationPermissionGranted) }
-
-    val clips by vm.clips.collectAsState()
 
     NavHost(navController = navController, startDestination = "home") {
         composable("home") {
@@ -48,7 +44,6 @@ fun NavPage(
                 onStartRecording = { navController.navigate("recording") },
                 onRequestCameraPermission = onRequestCameraPermission,
                 onOpenAppSettings = onOpenAppSettings,
-                onViewAlbum = { navController.navigate("album") },
                 onSettings = { navController.navigate("settings") },
                 onContacts = { navController.navigate("contacts") }
             )
@@ -58,14 +53,6 @@ fun NavPage(
             RecordingRoute(
                 vm = vm,
                 onBack = { navController.popBackStack() } // go back to Home
-            )
-        }
-
-        composable("album") {
-            AlbumScreen(
-                clips = clips,
-                onBack = { navController.popBackStack() },
-                onDeleteClips = { ids -> vm.deleteClips(ctx, ids) }
             )
         }
 

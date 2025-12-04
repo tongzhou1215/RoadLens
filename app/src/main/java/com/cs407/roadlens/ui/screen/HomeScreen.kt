@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Contacts
 import androidx.compose.material.icons.rounded.PlayCircle
-import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
@@ -52,7 +51,6 @@ fun HomeScreen(
     onStartRecording: () -> Unit,
     onRequestCameraPermission: () -> Unit,
     onOpenAppSettings: () -> Unit,
-    onViewAlbum: () -> Unit,
     onSettings: () -> Unit,
     onContacts: () -> Unit,
 ) {
@@ -127,20 +125,6 @@ fun HomeScreen(
                         Icon(Icons.Rounded.PlayCircle, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text(text = "Start Recording", style = MaterialTheme.typography.titleMedium)
-                    }
-
-                    OutlinedButton(
-                        onClick = onViewAlbum,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color.White.copy(alpha = 0.05f),
-                            contentColor = Color(0xFFE5E7EB)
-                        )
-                    ) {
-                        Icon(Icons.Rounded.PhotoLibrary, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(text = "View Album", style = MaterialTheme.typography.titleMedium)
                     }
 
                     OutlinedButton(
