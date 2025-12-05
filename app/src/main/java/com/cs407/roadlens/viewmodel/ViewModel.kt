@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +17,7 @@ import com.cs407.roadlens.camera.DashCamActions
 import com.cs407.roadlens.camera.DashCamService
 import com.cs407.roadlens.data.local.entities.EmergencyContact
 import com.cs407.roadlens.data.repository.EmergencyContactRepository
+import com.cs407.roadlens.message.EmergencyMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -235,16 +237,6 @@ class ViewModel : ViewModel() {
         }
     }
 
-    fun onAccidentDetected(context: Context) {
-        if (!_recordingState.value.isRecording) return
-
-        context.startService(
-            Intent(context, DashCamService::class.java)
-                .setAction(DashCamActions.ACTION_CRASH_DETECTED)
-        )
-
-        stopRecording(context, RecordingStopReason.ACCIDENT)
-    }
 
     fun stopRecording(context: Context, reason: RecordingStopReason) {
         if (!_recordingState.value.isRecording) return
@@ -279,6 +271,8 @@ class ViewModel : ViewModel() {
             context,
             Manifest.permission.RECORD_AUDIO
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+
 }
 
 class EmergencyContactViewModel(val repo: EmergencyContactRepository) : ViewModel() {
@@ -314,4 +308,23 @@ class EmergencyContactViewModel(val repo: EmergencyContactRepository) : ViewMode
         name = original?.name ?: ""
         phone = original?.phone ?: ""
     }
+
+    suspend fun reload() {
+        val contact = repo.getContact()
+        clearChanges(contact)
+    }
+
+}
+
+class EmergencyMessageViewModel() : ViewModel() {
+
+    fun sendCrashDetectedSms(context: Context, phone: String, name:String) {
+        Log.e("MESSAGE_TO",phone)
+        EmergencyMessage.sendSms(
+            context = context,
+            phone = phone,
+            message = "$name was in a crash at Lat: , Lang: !"
+        )
+    }
+
 }

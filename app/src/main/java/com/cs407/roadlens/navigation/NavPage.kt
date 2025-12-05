@@ -21,16 +21,15 @@ fun NavPage(
     cameraPermissionPermanentlyDenied: Boolean,
     locationPermissionGranted: Boolean,
     locationPermissionPermanentlyDenied: Boolean,
+    smsPermissionGranted: Boolean,
+    smsPermissionPermanentlyDenied: Boolean,
     onRequestCameraPermission: () -> Unit,
     onRequestLocationPermission: () -> Unit,
+    onRequestSmsPermission: () -> Unit,
     onOpenAppSettings: () -> Unit
 ) {
     // ONE shared app ViewModel
     val vm: RLViewModel = viewModel()
-    val ctx = LocalContext.current
-    val emergencyContactViewModel: ECViewModel = viewModel(
-        factory = EmergencyContactViewModelFactory(ctx.applicationContext)
-    )
 
     // Keep camera/location permissions in sync
     LaunchedEffect(cameraPermissionGranted) { vm.setCameraGranted(cameraPermissionGranted) }
@@ -79,7 +78,10 @@ fun NavPage(
         }
 
         composable("contacts") {
-
+            val ctx = LocalContext.current
+            val emergencyContactViewModel: ECViewModel = viewModel(
+                factory = EmergencyContactViewModelFactory(ctx.applicationContext)
+            )
             ContactsScreen(
                 viewModel = emergencyContactViewModel,
                 onBack = { navController.popBackStack() },

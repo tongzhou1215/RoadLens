@@ -47,7 +47,7 @@ fun ContactsScreen(
         OutlinedTextField(
             value = viewModel.name,
             onValueChange = { viewModel.name = it },
-            label = { Text("Name") },
+            label = { Text("Your Name") },
             enabled = editing,
             modifier = Modifier.fillMaxWidth()
         )
@@ -57,7 +57,7 @@ fun ContactsScreen(
         OutlinedTextField(
             value = viewModel.phone,
             onValueChange = { viewModel.phone = it },
-            label = { Text("Phone") },
+            label = { Text("Emergency Phone Number") },
             enabled = editing,
             modifier = Modifier.fillMaxWidth()
         )
@@ -81,12 +81,9 @@ fun ContactsScreen(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Button(onClick = {
-                    // Reset to values saved in DB
                     editing = false
-                    // Reload from DB
                     viewModel.viewModelScope.launch {
-                        val contact = viewModel.repo.getContact()
-                        viewModel.clearChanges(contact)
+                        viewModel.reload()
                     }
                 }) {
                     Text("Cancel")

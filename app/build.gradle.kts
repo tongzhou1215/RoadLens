@@ -42,6 +42,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
     val room_version = "2.6.1" // latest stable
 
     implementation("androidx.room:room-runtime:$room_version")

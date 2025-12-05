@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
     private val cameraPermission = Manifest.permission.CAMERA
     private val locationPermission = Manifest.permission.ACCESS_FINE_LOCATION
     private val notificationPermission = Manifest.permission.POST_NOTIFICATIONS
+    private val smsPermission = Manifest.permission.SEND_SMS
 
     private var cameraPermissionGranted by mutableStateOf(false)
     private var hasRequestedCameraPermission by mutableStateOf(false)
@@ -32,6 +33,11 @@ class MainActivity : ComponentActivity() {
     private var locationPermissionGranted by mutableStateOf(false)
     private var hasRequestedLocationPermission by mutableStateOf(false)
     private var locationPermissionPermanentlyDenied by mutableStateOf(false)
+    private var smsPermissionGranted by mutableStateOf(false)
+    private var hasRequestedSmsPermission by mutableStateOf(false)
+    private var smsPermissionPermanentlyDenied by mutableStateOf(false)
+
+
 
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -57,12 +63,32 @@ class MainActivity : ComponentActivity() {
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
 
+    private val requestSmsPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            hasRequestedSmsPermission = true
+            smsPermissionGranted = granted
+            smsPermissionPermanentlyDenied =
+                !granted && !shouldShowRequestPermissionRationale(smsPermission)
+
+            if (!granted) {
+                Toast.makeText(
+                    this,
+                    "SMS permission is required to send emergency messages.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            requestNotificationPermissionIfNeeded()
+        }
+
+
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         refreshCameraPermissionState()
         refreshLocationPermissionState()
-        requestNotificationPermissionIfNeeded()
+        requestSmsPermissionIfNeeded()
         setContent {
             RoadLensTheme {
                 val navController = rememberNavController()
@@ -72,8 +98,11 @@ class MainActivity : ComponentActivity() {
                     cameraPermissionPermanentlyDenied = cameraPermissionPermanentlyDenied,
                     locationPermissionGranted = locationPermissionGranted,
                     locationPermissionPermanentlyDenied = locationPermissionPermanentlyDenied,
+                    smsPermissionGranted = smsPermissionGranted,
+                    smsPermissionPermanentlyDenied = smsPermissionPermanentlyDenied,
                     onRequestCameraPermission = { requestCameraPermission.launch(cameraPermission) },
                     onRequestLocationPermission = { requestLocationPermission.launch(locationPermission) },
+                    onRequestSmsPermission = { requestSmsPermission.launch(smsPermission) },
                     onOpenAppSettings = { openAppSettings() }
                 )
             }
@@ -84,6 +113,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         refreshCameraPermissionState()
         refreshLocationPermissionState()
+        refreshSmsPermissionState()
     }
 
     private fun refreshCameraPermissionState() {
@@ -100,6 +130,14 @@ class MainActivity : ComponentActivity() {
             !granted && hasRequestedLocationPermission && !shouldShowRequestPermissionRationale(locationPermission)
     }
 
+    private fun refreshSmsPermissionState() {
+        val granted = hasPermission(smsPermission)
+        smsPermissionGranted = granted
+        smsPermissionPermanentlyDenied =
+            !granted && hasRequestedSmsPermission &&
+                    !shouldShowRequestPermissionRationale(smsPermission)
+    }
+
     private fun hasPermission(p: String): Boolean =
         ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
 
@@ -109,6 +147,27 @@ class MainActivity : ComponentActivity() {
         ) {
             requestNotificationPermission.launch(notificationPermission)
         }
+    }
+
+    private fun requestSmsPermissionIfNeeded() {
+        if (!hasPermission(smsPermission)) {
+
+            requestSmsPermission.launch(smsPermission)
+        }
+    }
+
+    private fun requestPermissionsIfNeeded(){
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !hasPermission(notificationPermission)
+        ) {
+            requestNotificationPermission.launch(notificationPermission)
+        }
+
+        if (!hasPermission(smsPermission)) {
+
+            requestSmsPermission.launch(smsPermission)
+        }
+
     }
 
     private fun openAppSettings() {
