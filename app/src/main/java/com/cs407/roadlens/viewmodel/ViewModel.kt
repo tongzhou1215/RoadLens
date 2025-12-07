@@ -279,6 +279,9 @@ class ViewModel : ViewModel() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (intent?.action != DashCamActions.ACTION_SEGMENT_SAVED) return
                 val wasAccident = intent.getBooleanExtra(DashCamActions.EXTRA_SEG_IS_ACCIDENT, false)
+                val segName = intent.getStringExtra(DashCamActions.EXTRA_SEG_NAME)
+                val segUri = intent.getStringExtra(DashCamActions.EXTRA_SEG_URI)
+                Log.d("DashCamUI", "Segment saved broadcast accident=$wasAccident name=$segName uri=$segUri")
                 if (wasAccident) {
                     // Crash detection stopped the backend; mirror state in UI.
                     ctx?.let { stopRecording(it, RecordingStopReason.ACCIDENT) }

@@ -241,6 +241,7 @@ class DashCamService : LifecycleService() {
         currentSegmentName = name
         currentSegmentStartedAt = System.currentTimeMillis()
         currentSegmentAccident = false
+        Log.d("DashCamService", "Starting segment: $name at $currentSegmentStartedAt")
 
         val contentValues = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
@@ -280,6 +281,17 @@ class DashCamService : LifecycleService() {
                 val savedName = currentSegmentName
                 val startedAt = currentSegmentStartedAt
                 if (outputUri != null && savedName != null && startedAt != 0L) {
+                    Log.d("DashCamService", "Segment finalized uri=$outputUri name=$savedName durMs=$durationMs accident=$currentSegmentAccident")
+                    if (!currentSegmentAccident) {
+                        showToast("Clip saved to gallery")
+                    }
+                    // Nudge MediaStore/gallery to pick up the new item quickly.
+                    try {
+                        sendBroadcast(Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, outputUri))
+                        contentResolver.notifyChange(outputUri, null)
+                    } catch (t: Throwable) {
+                        Log.w("DashCamService", "Notify media scanner failed: ${t.message}")
+                    }
                     sendBroadcast(
                         Intent(DashCamActions.ACTION_SEGMENT_SAVED).apply {
                             setPackage(packageName)
@@ -290,7 +302,16 @@ class DashCamService : LifecycleService() {
                             putExtra(DashCamActions.EXTRA_SEG_IS_ACCIDENT, currentSegmentAccident)
                         }
                     )
+                } else {
+                    Log.e(
+                        "DashCamService",
+                        "Segment finalize missing data: uri=$outputUri name=$savedName started=$startedAt"
+                    )
                 }
+                // Clear identifiers to avoid reusing stale state on the next start.
+                currentSegmentName = null
+                currentSegmentStartedAt = 0L
+                currentSegmentAccident = false
                 if (isRecordingLoopActive()) startNextSegment()
             }
         }
@@ -312,17 +333,27 @@ class DashCamService : LifecycleService() {
             currentRecording = null
         }
         if (isAccident) {
+            Log.d("DashCamService", "Accident finalize triggered; loopActive=$loopActive currentName=$currentSegmentName")
+        } else {
+            Log.d("DashCamService", "Finalize current segment (normal); loopActive=$loopActive currentName=$currentSegmentName")
+        }
+        if (isAccident) {
             loopActive = false
             stopCrashDetection()
             showToast("CRITICAL CLIP SAVED (Accident Detected) - recording stopped")
             lifecycleScope.launch {
+                val refreshed = refreshLastKnownLocation()
+                Log.d(
+                    "DashCamService",
+                    "Sending crash SMS location lat=${refreshed?.latitude} lon=${refreshed?.longitude}"
+                )
                 val contact = withContext(Dispatchers.IO) {
                     contactRepo.getContact()
                 }
 
                 contact?.let {
-                    val lat = lastKnownLocation?.latitude
-                    val lon = lastKnownLocation?.longitude
+                    val lat = refreshed?.latitude
+                    val lon = refreshed?.longitude
                     emViewModel.sendCrashDetectedSms(
                         context = applicationContext,
                         phone = it.phone,
@@ -380,7 +411,9 @@ class DashCamService : LifecycleService() {
     }
 
     private fun timestamp(): String =
-        java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        java.time.LocalDateTime.now().format(
+            java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS")
+        )
 
     private fun mapFloatToSensitivity(value: Float): CrashSensitivity = when {
         value < 0.35f -> CrashSensitivity.LOW
@@ -389,4 +422,31 @@ class DashCamService : LifecycleService() {
     }
 
     private fun mainExecutor() = ContextCompat.getMainExecutor(this)
+
+    private fun refreshLastKnownLocation(): android.location.Location? {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED
+        ) return lastKnownLocation
+
+        val lm = locationManager ?: getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        if (lm != null && locationManager == null) {
+            locationManager = lm
+        }
+        val providers = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER
+        )
+        for (provider in providers) {
+            try {
+                val loc = lm?.getLastKnownLocation(provider)
+                if (loc != null) {
+                    lastKnownLocation = loc
+                    return loc
+                }
+            } catch (_: SecurityException) {
+                // permissions checked above
+            }
+        }
+        return lastKnownLocation
+    }
 }
