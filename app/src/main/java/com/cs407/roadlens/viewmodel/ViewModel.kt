@@ -318,13 +318,25 @@ class EmergencyContactViewModel(val repo: EmergencyContactRepository) : ViewMode
 
 class EmergencyMessageViewModel() : ViewModel() {
 
-    fun sendCrashDetectedSms(context: Context, phone: String, name:String) {
+    fun sendCrashDetectedSms(
+        context: Context,
+        phone: String,
+        name: String,
+        latitude: Double? = null,
+        longitude: Double? = null
+    ) {
         Log.e("MESSAGE_TO",phone)
+        val locationText = if (latitude != null && longitude != null) {
+            " at Lat: ${"%.5f".format(latitude)}, Lon: ${"%.5f".format(longitude)}"
+        } else {
+            " at Lat: , Lon: "
+        }
         EmergencyMessage.sendSms(
             context = context,
             phone = phone,
-            message = "$name was in a crash at Lat: , Lang: !"
+            message = "$name was in a crash$locationText!"
         )
     }
 
 }
+

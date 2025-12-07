@@ -76,7 +76,9 @@ class DashCamService : LifecycleService() {
     // Sensor & Location properties
     private lateinit var crashDetector: CrashDetector
     private var locationManager: LocationManager? = null
+    private var lastKnownLocation: android.location.Location? = null
     private val locationListener = LocationListener { location ->
+        lastKnownLocation = location
         crashDetector.onLocationUpdate(location)
     }
 
@@ -319,8 +321,15 @@ class DashCamService : LifecycleService() {
                 }
 
                 contact?.let {
-//                    sendCrashSmsFromService(it, "Crash detected!")
-                    emViewModel.sendCrashDetectedSms(applicationContext,it.phone, it.name)
+                    val lat = lastKnownLocation?.latitude
+                    val lon = lastKnownLocation?.longitude
+                    emViewModel.sendCrashDetectedSms(
+                        context = applicationContext,
+                        phone = it.phone,
+                        name = it.name,
+                        latitude = lat,
+                        longitude = lon
+                    )
                 }
             }
             // TODO: Notify ViewModel about the accident save (e.g., via broadcast/binding)
