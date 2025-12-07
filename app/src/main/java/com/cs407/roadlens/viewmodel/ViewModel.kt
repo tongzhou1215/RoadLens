@@ -100,7 +100,6 @@ class ViewModel : ViewModel() {
     private var recordingJob: Job? = null
     private var currentStartTimestamp: Long? = null
     private var recordingContext: Context? = null
-    private var continueLoop = false
     private var dashcamReceiver: BroadcastReceiver? = null
 
     // ---- Settings setters ----
@@ -139,7 +138,6 @@ class ViewModel : ViewModel() {
             ).show()
             return
         }
-        continueLoop = true
         beginRecordingSegment(context.applicationContext)
     }
 
@@ -180,28 +178,13 @@ class ViewModel : ViewModel() {
             lastSavedClipKind = null
         )
 
-        recordingJob = viewModelScope.launch {
-            while (true) {
-                delay(1.seconds)
-                val current = _recordingState.value
-                if (!current.isRecording) break
-
-                val updatedElapsed = current.elapsedSeconds + 1
-                val target = current.targetDurationSeconds
-                _recordingState.value = current.copy(elapsedSeconds = updatedElapsed)
-
-                if (updatedElapsed >= target) {
-                    completeSegment(context, RecordingStopReason.AUTO, restart = true)
-                    break
-                }
-            }
-        }
+        // Drive the on-screen timer; service owns actual segment rollover.
+        startUiTimer()
     }
 
     private fun completeSegment(
         context: Context,
-        reason: RecordingStopReason,
-        restart: Boolean
+        reason: RecordingStopReason
     ) {
         dashcamStop(context.applicationContext)
 
@@ -218,8 +201,8 @@ class ViewModel : ViewModel() {
             else -> ClipKind.LOOP
         }
 
-        val showAutoStopped = reason == RecordingStopReason.AUTO && !restart
-        val lastKind = if (restart) null else clipKind
+        val showAutoStopped = reason == RecordingStopReason.AUTO
+        val lastKind = clipKind
 
         _recordingState.value = current.copy(
             isRecording = false,
@@ -232,13 +215,16 @@ class ViewModel : ViewModel() {
         unregisterDashcamReceiver()
         recordingContext = null
 
-        if (restart && continueLoop) {
-            viewModelScope.launch {
-                // Small pause to let the service finalize before restarting.
-                delay(250)
-                if (continueLoop) {
-                    beginRecordingSegment(context)
-                }
+    }
+
+    private fun startUiTimer() {
+        recordingJob?.cancel()
+        recordingJob = viewModelScope.launch {
+            while (true) {
+                delay(1.seconds)
+                val current = _recordingState.value
+                if (!current.isRecording) break
+                _recordingState.value = current.copy(elapsedSeconds = current.elapsedSeconds + 1)
             }
         }
     }
@@ -246,8 +232,7 @@ class ViewModel : ViewModel() {
 
     fun stopRecording(context: Context, reason: RecordingStopReason) {
         if (!_recordingState.value.isRecording) return
-        continueLoop = false
-        completeSegment(context, reason, restart = false)
+        completeSegment(context, reason)
     }
 
     fun manualClip(context: Context) {
@@ -258,10 +243,20 @@ class ViewModel : ViewModel() {
         val current = _recordingState.value
         if (current.autoStopped || current.lastSavedClipKind != null) {
             _recordingState.value = current.copy(
-                autoStopped = false,
-                lastSavedClipKind = null
-            )
+            autoStopped = false,
+            lastSavedClipKind = null
+        )
+
+        recordingJob = viewModelScope.launch {
+            while (true) {
+                delay(1.seconds)
+                val current = _recordingState.value
+                if (!current.isRecording) break
+                val updatedElapsed = current.elapsedSeconds + 1
+                _recordingState.value = current.copy(elapsedSeconds = updatedElapsed)
+            }
         }
+    }
     }
 
     private fun hasNotificationPermission(context: Context): Boolean {
@@ -287,6 +282,18 @@ class ViewModel : ViewModel() {
                 if (wasAccident) {
                     // Crash detection stopped the backend; mirror state in UI.
                     ctx?.let { stopRecording(it, RecordingStopReason.ACCIDENT) }
+                } else {
+                    // Normal loop segment saved; reset timer but stay in recording mode.
+                    val current = _recordingState.value
+                    if (current.isRecording) {
+                        _recordingState.value = current.copy(
+                            elapsedSeconds = 0,
+                            lastSavedClipKind = ClipKind.LOOP,
+                            autoStopped = false
+                        )
+                        // ensure timer continues from zero
+                        startUiTimer()
+                    }
                 }
             }
         }
