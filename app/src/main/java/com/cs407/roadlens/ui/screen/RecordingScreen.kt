@@ -104,14 +104,11 @@ fun RecordingScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text("0 MPH", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(
-                            "GPS: Active",
-                            color = Color(0xFF52D273),
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
+                    Text(
+                        "GPS: Active",
+                        color = Color(0xFF52D273),
+                        style = MaterialTheme.typography.labelSmall
+                    )
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))

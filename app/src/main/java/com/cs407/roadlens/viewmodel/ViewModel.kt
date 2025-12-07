@@ -1,7 +1,9 @@
 package com.cs407.roadlens.viewmodel
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.os.Build
 import android.util.Log
@@ -99,6 +101,7 @@ class ViewModel : ViewModel() {
     private var currentStartTimestamp: Long? = null
     private var recordingContext: Context? = null
     private var continueLoop = false
+    private var dashcamReceiver: BroadcastReceiver? = null
 
     // ---- Settings setters ----
     fun setCameraGranted(v: Boolean) { settings = settings.copy(cameraGranted = v) }
@@ -159,6 +162,8 @@ class ViewModel : ViewModel() {
 
         currentStartTimestamp = startTimestamp
         recordingContext = context.applicationContext
+
+        registerDashcamReceiver(context.applicationContext)
 
         dashcamStart(
             context.applicationContext,
@@ -224,6 +229,7 @@ class ViewModel : ViewModel() {
         )
 
         currentStartTimestamp = null
+        unregisterDashcamReceiver()
         recordingContext = null
 
         if (restart && continueLoop) {
@@ -271,6 +277,38 @@ class ViewModel : ViewModel() {
             context,
             Manifest.permission.RECORD_AUDIO
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun registerDashcamReceiver(context: Context) {
+        if (dashcamReceiver != null) return
+        dashcamReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (intent?.action != DashCamActions.ACTION_SEGMENT_SAVED) return
+                val wasAccident = intent.getBooleanExtra(DashCamActions.EXTRA_SEG_IS_ACCIDENT, false)
+                if (wasAccident) {
+                    // Crash detection stopped the backend; mirror state in UI.
+                    ctx?.let { stopRecording(it, RecordingStopReason.ACCIDENT) }
+                }
+            }
+        }
+        val filter = IntentFilter(DashCamActions.ACTION_SEGMENT_SAVED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(dashcamReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(dashcamReceiver, filter)
+        }
+    }
+
+    private fun unregisterDashcamReceiver() {
+        val ctx = recordingContext ?: return
+        dashcamReceiver?.let { receiver ->
+            try {
+                ctx.unregisterReceiver(receiver)
+            } catch (_: Exception) {
+                // Receiver may already be unregistered; ignore.
+            }
+        }
+        dashcamReceiver = null
+    }
 
 
 }
@@ -339,4 +377,3 @@ class EmergencyMessageViewModel() : ViewModel() {
     }
 
 }
-
