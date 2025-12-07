@@ -18,6 +18,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.annotation.RequiresPermission
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.MediaStoreOutputOptions
@@ -169,7 +170,13 @@ class DashCamService : LifecycleService() {
 
             val selector = CameraSelector.DEFAULT_BACK_CAMERA
             cameraProvider.unbindAll()
-            cameraProvider.bindToLifecycle(this, selector, videoCapture)
+            val previewProvider = PreviewSurfaceHolder.surfaceProvider
+            if (previewProvider != null) {
+                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewProvider) }
+                cameraProvider.bindToLifecycle(this, selector, videoCapture, preview)
+            } else {
+                cameraProvider.bindToLifecycle(this, selector, videoCapture)
+            }
         }, ContextCompat.getMainExecutor(this))
     }
 

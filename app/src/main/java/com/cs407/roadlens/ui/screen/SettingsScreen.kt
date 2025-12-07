@@ -60,7 +60,6 @@ fun SettingsScreen(
     }
 
     var grantLocation by rememberSaveable { mutableStateOf(sanitizedCurrent.locationGranted) }
-    var saveGps by rememberSaveable { mutableStateOf(sanitizedCurrent.saveGps) }
 
     // --- UPDATED STATE: Use String for display ---
     var crashSensitivityString by rememberSaveable {
@@ -81,14 +80,12 @@ fun SettingsScreen(
 
     LaunchedEffect(sanitizedCurrent) {
         grantLocation = sanitizedCurrent.locationGranted
-        saveGps = sanitizedCurrent.saveGps
         crashSensitivityString = floatToSensitivityString(sanitizedCurrent.crashSensitivity) // Sync new state
         loopDuration = sanitizedCurrent.loopDuration.takeIf { it in durationOptions } ?: durationOptions.first()
     }
 
     val pendingSettings = remember(
         grantLocation,
-        saveGps,
         loopDuration,
         crashSensitivityString, // Depend on string state
         cameraPermissionGranted,
@@ -97,7 +94,6 @@ fun SettingsScreen(
         AppSettings(
             cameraGranted = cameraPermissionGranted,
             locationGranted = grantLocation && locationPermissionGranted,
-            saveGps = saveGps && grantLocation && locationPermissionGranted,
             loopDuration = loopDuration,
             // --- CONVERT STRING BACK TO FLOAT FOR MODEL ---
             crashSensitivity = sensitivityMap[crashSensitivityString] ?: 0.5f
@@ -226,32 +222,6 @@ fun SettingsScreen(
                             Spacer(Modifier.width(8.dp))
                             Text(if (locationPermissionPermanentlyDenied) "Open App Settings" else "Grant Location")
                         }
-                    }
-                }
-            }
-
-            // Save GPS
-            item {
-                SettingCard {
-                    SettingToggleRow(
-                        title = "Save GPS with clips",
-                        subtitle = "Attach GPS coordinates when clips are exported",
-                        checked = saveGps && grantLocation && locationPermissionGranted,
-                        onToggle = { enabled ->
-                            if (enabled && grantLocation && locationPermissionGranted) {
-                                saveGps = true
-                            } else if (!enabled) {
-                                saveGps = false
-                            }
-                        }
-                    )
-                    if (!locationPermissionGranted || !grantLocation) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "Enable location access above to save GPS data with clips.",
-                            color = Color.Gray,
-                            fontSize = 12.sp
-                        )
                     }
                 }
             }

@@ -33,6 +33,7 @@ import com.cs407.roadlens.viewmodel.ClipKind
 import com.cs407.roadlens.viewmodel.RecordingStopReason
 import com.cs407.roadlens.viewmodel.RecordingUiState
 import com.cs407.roadlens.viewmodel.ViewModel
+import com.cs407.roadlens.camera.PreviewSurfaceHolder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,23 +91,9 @@ fun RecordingScreen(
             ) {
                 if (cameraAllowed && showPreview) {
                     CameraPreviewBox(
-                        modifier = Modifier.matchParentSize()
+                        modifier = Modifier.matchParentSize(),
+                        isRecording = uiState.isRecording
                     )
-                } else if (uiState.isRecording) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(Color(0xFF111315)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Preview paused while dashcam is recording",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 24.dp)
-                        )
-                    }
                 }
 
                 Row(
@@ -249,19 +236,15 @@ fun RecordingRoute(
 ) {
     val ctx = LocalContext.current
     val ui by vm.recordingState.collectAsState()
-    var previewEnabled by remember { mutableStateOf(true) }
 
     RecordingScreen(
         uiState = ui,
         cameraAllowed = vm.settings.cameraGranted,
-        showPreview = previewEnabled && !ui.isRecording,
+        showPreview = true,
         onToggleRecording = {
             if (ui.isRecording) {
                 vm.stopRecording(ctx, RecordingStopReason.MANUAL)
-                previewEnabled = true
             } else {
-                // Release preview immediately so dashcam service can take the camera
-                previewEnabled = false
                 vm.startRecording(ctx)
             }
         },
@@ -269,7 +252,6 @@ fun RecordingRoute(
         onAutoStopAcknowledged = {
             // ViewModel auto-stopped -> finalize flags
             vm.acknowledgeAutoStop()
-            previewEnabled = true
         },
         onBack = onBack
     )
@@ -278,7 +260,8 @@ fun RecordingRoute(
 /** Camera preview only (recording handled by foreground service) */
 @Composable
 private fun CameraPreviewBox(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isRecording: Boolean
 ) {
     val ctx = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -312,25 +295,37 @@ private fun CameraPreviewBox(
 
     AndroidView(factory = { previewView }, modifier = modifier)
 
-    // Bind Preview when not recording; release when the dashcam service needs the camera.
+    // Keep the surface provider available to the dashcam service for live preview while recording.
     DisposableEffect(Unit) {
+        PreviewSurfaceHolder.surfaceProvider = previewView.surfaceProvider
+        onDispose { PreviewSurfaceHolder.surfaceProvider = null }
+    }
+
+    // Bind Preview when not recording; release when the dashcam service needs the camera.
+    DisposableEffect(isRecording) {
         val future = ProcessCameraProvider.getInstance(ctx)
         val listener = Runnable {
             try {
                 val provider = future.get()
 
+                // Always unbind our previous preview; service will bind capture while recording.
+                boundPreview?.let { provider.unbind(it) }
+                boundPreview = null
+                boundProvider = provider
+
+                if (isRecording) return@Runnable
+
                 val preview = Preview.Builder().build().also { p ->
                     p.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
-                boundPreview?.let { provider.unbind(it) }
+                provider.unbindAll()
                 provider.bindToLifecycle(
                     lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     preview
                 )
 
-                boundProvider = provider
                 boundPreview = preview
             } catch (t: Throwable) {
                 Toast.makeText(ctx, "Camera bind failed: ${t.message}", Toast.LENGTH_LONG).show()
