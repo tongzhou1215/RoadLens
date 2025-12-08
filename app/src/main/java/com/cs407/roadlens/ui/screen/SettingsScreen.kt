@@ -14,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -26,16 +25,14 @@ import kotlin.math.abs
 
 // --- Sensitivity Mapping ---
 private val sensitivityMap = mapOf(
-    "Low" to 0.2f,    // Less likely to trigger (Requires higher G-force)
-    "Normal" to 0.5f, // Standard setting
-    "High" to 0.8f    // More likely to trigger (Lower G-force threshold)
+    "Low" to 0.2f,
+    "Normal" to 0.5f,
+    "High" to 0.8f
 )
 
 private fun floatToSensitivityString(value: Float): String {
-    // Finds the closest string option to the saved float value
     return sensitivityMap.minByOrNull { (_, f) -> abs(f - value) }?.key ?: "Normal"
 }
-// ---------------------------
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,7 +48,6 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
     onSave: (AppSettings) -> Unit = {}
 ) {
-    // ---- Local UI state ----
     val sanitizedCurrent = remember(currentSettings, cameraPermissionGranted, locationPermissionGranted) {
         currentSettings.copy(
             cameraGranted = cameraPermissionGranted,
@@ -60,9 +56,7 @@ fun SettingsScreen(
     }
 
     var grantLocation by rememberSaveable { mutableStateOf(sanitizedCurrent.locationGranted) }
-    var saveGps by rememberSaveable { mutableStateOf(sanitizedCurrent.saveGps) }
 
-    // --- UPDATED STATE: Use String for display ---
     var crashSensitivityString by rememberSaveable {
         mutableStateOf(floatToSensitivityString(sanitizedCurrent.crashSensitivity))
     }
@@ -81,27 +75,23 @@ fun SettingsScreen(
 
     LaunchedEffect(sanitizedCurrent) {
         grantLocation = sanitizedCurrent.locationGranted
-        saveGps = sanitizedCurrent.saveGps
-        crashSensitivityString = floatToSensitivityString(sanitizedCurrent.crashSensitivity) // Sync new state
+        crashSensitivityString = floatToSensitivityString(sanitizedCurrent.crashSensitivity)
         loopDuration = sanitizedCurrent.loopDuration.takeIf { it in durationOptions } ?: durationOptions.first()
     }
 
     val pendingSettings = remember(
         grantLocation,
-        saveGps,
         loopDuration,
-        crashSensitivityString, // Depend on string state
+        crashSensitivityString,
         cameraPermissionGranted,
         locationPermissionGranted
     ) {
         AppSettings(
             cameraGranted = cameraPermissionGranted,
             locationGranted = grantLocation && locationPermissionGranted,
-            saveGps = saveGps && grantLocation && locationPermissionGranted,
+            saveGps = false, // GPS save removed
             loopDuration = loopDuration,
-            // --- CONVERT STRING BACK TO FLOAT FOR MODEL ---
             crashSensitivity = sensitivityMap[crashSensitivityString] ?: 0.5f
-            // ----------------------------------------------
         )
     }
 
@@ -164,7 +154,7 @@ fun SettingsScreen(
                     Spacer(Modifier.height(4.dp))
                     val cameraMessage = when {
                         cameraPermissionGranted -> "Camera access is enabled."
-                        cameraPermissionPermanentlyDenied -> "Camera access is blocked. Enable the permission from system settings to record."
+                        cameraPermissionPermanentlyDenied -> "Camera access is blocked. Enable it in system settings to record."
                         else -> "Camera access is required to start recording."
                     }
                     Text(cameraMessage, color = Color.Gray, fontSize = 13.sp)
@@ -230,35 +220,9 @@ fun SettingsScreen(
                 }
             }
 
-            // Save GPS
-            item {
-                SettingCard {
-                    SettingToggleRow(
-                        title = "Save GPS with clips",
-                        subtitle = "Attach GPS coordinates when clips are exported",
-                        checked = saveGps && grantLocation && locationPermissionGranted,
-                        onToggle = { enabled ->
-                            if (enabled && grantLocation && locationPermissionGranted) {
-                                saveGps = true
-                            } else if (!enabled) {
-                                saveGps = false
-                            }
-                        }
-                    )
-                    if (!locationPermissionGranted || !grantLocation) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "Enable location access above to save GPS data with clips.",
-                            color = Color.Gray,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-
             item { SectionHeader(title = "Recording") }
 
-            // Loop Duration (dropdown)
+            // Loop Duration
             item {
                 SettingCard {
                     Text("Loop duration", fontSize = 16.sp, fontWeight = FontWeight.Medium)
@@ -295,7 +259,7 @@ fun SettingsScreen(
                 }
             }
 
-            // --- UPDATED: Crash Sensitivity (Discrete Control) ---
+            // Crash Sensitivity
             item {
                 SettingCard {
                     Text("Crash sensitivity", fontSize = 16.sp, fontWeight = FontWeight.Medium)
@@ -305,7 +269,7 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(IntrinsicSize.Min) // Required for vertical dividers/equal heights
+                            .height(IntrinsicSize.Min)
                             .background(Color.White, RoundedCornerShape(12.dp)),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
@@ -340,14 +304,12 @@ fun SettingsScreen(
                     )
                 }
             }
-            // -----------------------------------------------------
 
-            item { Spacer(Modifier.height(64.dp)) } // 给底部按钮留空间
+            item { Spacer(Modifier.height(64.dp)) }
         }
     }
 }
 
-// --- NEW COMPOSABLE FOR SEGMENTED CONTROL OPTION ---
 @Composable
 private fun RowScope.SensitivityOption(
     label: String,
@@ -366,7 +328,6 @@ private fun RowScope.SensitivityOption(
         color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
         contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
         shape = cornerShape,
-        tonalElevation = 0.dp,
         modifier = Modifier
             .weight(1f)
             .clickable(onClick = onClick)
@@ -380,16 +341,12 @@ private fun RowScope.SensitivityOption(
         )
     }
 }
-// --------------------------------------------------
 
 @Composable
 private fun SettingCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xFFF7F7FA),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
+        color = Color(0xFFF7F7FA)
     ) {
         Column(modifier = Modifier.padding(16.dp), content = content)
     }
@@ -438,8 +395,7 @@ private fun StatusPill(
         shape = RoundedCornerShape(999.dp)
     ) {
         Row(
-            modifier = Modifier
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
