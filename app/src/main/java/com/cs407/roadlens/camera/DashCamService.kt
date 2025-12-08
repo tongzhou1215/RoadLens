@@ -27,9 +27,20 @@ import androidx.camera.video.Recorder
 import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.lifecycleScope
+import com.cs407.roadlens.viewmodel.EmergencyMessageViewModel
+import androidx.room.Room
+import com.cs407.roadlens.data.local.db.AppDatabase
+import com.cs407.roadlens.data.repository.EmergencyContactRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 object DashCamActions {
     const val ACTION_PREPARE = "dc.PREPARE"
@@ -46,6 +57,7 @@ object DashCamActions {
     const val EXTRA_SEG_NAME = "segment_name"
     const val EXTRA_SEG_STARTED_AT = "segment_started_at"
     const val EXTRA_SEG_IS_ACCIDENT = "segment_is_accident"
+
 }
 
 class DashCamService : LifecycleService() {
@@ -72,8 +84,21 @@ class DashCamService : LifecycleService() {
     private var currentSegmentStartedAt: Long = 0L
     private var currentSegmentAccident: Boolean = false
 
+    private val contactRepo: EmergencyContactRepository by lazy {
+        val db = AppDatabase.getDatabase(applicationContext)
+        EmergencyContactRepository(db.emergencyContactDao())
+    }
+
+    private lateinit var emViewModel: EmergencyMessageViewModel
+    private val viewModelStore = ViewModelStore()
+
     override fun onCreate() {
         super.onCreate()
+        emViewModel = ViewModelProvider(
+            viewModelStore,
+            ViewModelProvider.NewInstanceFactory()
+        )[EmergencyMessageViewModel::class.java]
+
         crashDetector = CrashDetector(this) { reason ->
             showToast("Crash detected: $reason")
             startService(
@@ -266,6 +291,8 @@ class DashCamService : LifecycleService() {
         mainHandler.postDelayed(segmentStopRunnable!!, segmentDurationMs)
     }
 
+
+
     private fun finalizeCurrentSegment(isAccident: Boolean = false) {
         segmentStopRunnable?.let { mainHandler.removeCallbacks(it) }
         segmentStopRunnable = null
@@ -279,6 +306,16 @@ class DashCamService : LifecycleService() {
             loopActive = false
             stopCrashDetection()
             showToast("CRITICAL CLIP SAVED (Accident Detected) - recording stopped")
+            lifecycleScope.launch {
+                val contact = withContext(Dispatchers.IO) {
+                    contactRepo.getContact()
+                }
+
+                contact?.let {
+//                    sendCrashSmsFromService(it, "Crash detected!")
+                    emViewModel.sendCrashDetectedSms(applicationContext,it.phone, it.name)
+                }
+            }
             // TODO: Notify ViewModel about the accident save (e.g., via broadcast/binding)
         }
     }
