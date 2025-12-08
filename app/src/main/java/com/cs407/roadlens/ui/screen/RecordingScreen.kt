@@ -39,7 +39,7 @@ import com.cs407.roadlens.viewmodel.ViewModel
 fun RecordingScreen(
     uiState: RecordingUiState,
     cameraAllowed: Boolean = true,
-    accelActive: Boolean = true, // currently unused but kept
+    accelActive: Boolean = true,
     showPreview: Boolean = true,
     onToggleRecording: () -> Unit,
     onManualSave: () -> Unit,
@@ -49,7 +49,6 @@ fun RecordingScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    // Toast whenever clip saved + handle auto-stop handshake
     LaunchedEffect(uiState.autoStopped, uiState.lastSavedClipKind) {
         val message = when (uiState.lastSavedClipKind) {
             ClipKind.MANUAL -> "Manual clip saved"
@@ -62,12 +61,10 @@ fun RecordingScreen(
         }
 
         if (uiState.autoStopped) {
-            // ViewModel says "auto stopped" → let route stop CameraX + clear flags
             onAutoStopAcknowledged()
         }
     }
 
-    // If permission revoked while recording, force stop
     LaunchedEffect(cameraAllowed, uiState.isRecording) {
         if (!cameraAllowed && uiState.isRecording) onToggleRecording()
     }
@@ -80,7 +77,6 @@ fun RecordingScreen(
                 .padding(padding)
                 .navigationBarsPadding()
         ) {
-            // ===== Camera preview + overlays =====
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -117,18 +113,22 @@ fun RecordingScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text("0 MPH", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(
-                            "GPS: Active",
-                            color = Color(0xFF52D273),
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
+
+                    // ---- Removed MPH ----
+                    Text(
+                        "GPS: Active",
+                        color = Color(0xFF52D273),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    // ----------------------
+
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (uiState.isRecording) Color(0xFFED4245) else Color(0xFF64748B))
+                            .background(
+                                if (uiState.isRecording) Color(0xFFED4245)
+                                else Color(0xFF64748B)
+                            )
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -183,7 +183,6 @@ fun RecordingScreen(
                 }
             }
 
-            // ===== Controls panel =====
             Surface(
                 color = Color(0xFFF7F7FA),
                 shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
@@ -207,7 +206,8 @@ fun RecordingScreen(
                                 .clip(CircleShape)
                                 .background(
                                     if (recordEnabled) {
-                                        if (uiState.isRecording) Color(0xFFEF4444) else Color(0xFFFF7A00)
+                                        if (uiState.isRecording) Color(0xFFEF4444)
+                                        else Color(0xFFFF7A00)
                                     } else {
                                         Color(0xFFFF7A00).copy(alpha = 0.35f)
                                     }
@@ -241,7 +241,6 @@ fun RecordingScreen(
     }
 }
 
-/** Route used by NavGraph */
 @Composable
 fun RecordingRoute(
     vm: ViewModel = viewModel(),
@@ -260,14 +259,12 @@ fun RecordingRoute(
                 vm.stopRecording(ctx, RecordingStopReason.MANUAL)
                 previewEnabled = true
             } else {
-                // Release preview immediately so dashcam service can take the camera
                 previewEnabled = false
                 vm.startRecording(ctx)
             }
         },
         onManualSave = { vm.manualClip(ctx) },
         onAutoStopAcknowledged = {
-            // ViewModel auto-stopped -> finalize flags
             vm.acknowledgeAutoStop()
             previewEnabled = true
         },
@@ -275,7 +272,6 @@ fun RecordingRoute(
     )
 }
 
-/** Camera preview only (recording handled by foreground service) */
 @Composable
 private fun CameraPreviewBox(
     modifier: Modifier = Modifier
@@ -286,10 +282,9 @@ private fun CameraPreviewBox(
     var boundPreview by remember { mutableStateOf<Preview?>(null) }
     var boundProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
-    // Ask CAMERA + AUDIO permission if needed
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* no-op */ }
+    ) { }
 
     LaunchedEffect(Unit) {
         val cameraGranted = ContextCompat.checkSelfPermission(
@@ -312,7 +307,6 @@ private fun CameraPreviewBox(
 
     AndroidView(factory = { previewView }, modifier = modifier)
 
-    // Bind Preview when not recording; release when the dashcam service needs the camera.
     DisposableEffect(Unit) {
         val future = ProcessCameraProvider.getInstance(ctx)
         val listener = Runnable {
@@ -343,8 +337,6 @@ private fun CameraPreviewBox(
         }
     }
 }
-
-/* ---------- small helpers ---------- */
 
 private fun formatHms(totalSeconds: Int): String {
     val h = totalSeconds / 3600
