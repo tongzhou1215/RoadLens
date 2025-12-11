@@ -375,7 +375,7 @@ class EmergencyMessageViewModel() : ViewModel() {
     ) {
         Log.e("MESSAGE_TO",phone)
         val locationText = if (latitude != null && longitude != null) {
-            " at Lat: ${"%.5f".format(latitude)}, Lon: ${"%.5f".format(longitude)}"
+            " at https://maps.google.com/?q=${"%.5f".format(latitude)},${"%.5f".format(longitude)}"
         } else {
             " at Lat: , Lon: "
         }
