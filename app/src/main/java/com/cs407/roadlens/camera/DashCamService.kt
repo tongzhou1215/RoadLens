@@ -69,6 +69,7 @@ class DashCamService : LifecycleService() {
     private var withAudio = false
     private var loopActive = false
     private var crashSensitivity = CrashSensitivity.MEDIUM
+    private var isCameraPrepared = false
 
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var segmentStopRunnable: Runnable? = null
@@ -158,6 +159,7 @@ class DashCamService : LifecycleService() {
             stopSelf()
             return
         }
+        isCameraPrepared = false
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             cameraProvider = providerFuture.get()
@@ -179,6 +181,7 @@ class DashCamService : LifecycleService() {
             } else {
                 cameraProvider.bindToLifecycle(this, selector, videoCapture)
             }
+            isCameraPrepared = true
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -237,6 +240,13 @@ class DashCamService : LifecycleService() {
             mainHandler.postDelayed(segmentStopRunnable!!, 500L)
             return
         }
+        if (!isCameraPrepared) {
+            // Camera not bound yet; retry shortly
+            segmentStopRunnable?.let { mainHandler.removeCallbacks(it) }
+            segmentStopRunnable = Runnable { startNextSegment() }
+            mainHandler.postDelayed(segmentStopRunnable!!, 500L)
+            return
+        }
         val name = "DashCam_${timestamp()}.mp4"
         currentSegmentName = name
         currentSegmentStartedAt = System.currentTimeMillis()
@@ -258,11 +268,15 @@ class DashCamService : LifecycleService() {
         val prepared = try {
             capture.output.prepareRecording(this, output)
         } catch (e: Exception) {
-            Log.e("DashCamService", "Failed to prepare recording", e)
+            Log.e("DashCamService", "Failed to prepare recording, retrying", e)
             showToast("Unable to start recording. Check storage permissions.")
-            finalizeCurrentSegment()
+            // Retry after delay instead of finalizing
+            segmentStopRunnable?.let { mainHandler.removeCallbacks(it) }
+            segmentStopRunnable = Runnable { startNextSegment() }
+            mainHandler.postDelayed(segmentStopRunnable!!, 2000L)
             return
         }.apply {
+            Log.d("DashCamService", "Prepare recording succeeded for segment $name")
             val hasAudioPermission = ContextCompat.checkSelfPermission(
                 this@DashCamService,
                 Manifest.permission.RECORD_AUDIO
