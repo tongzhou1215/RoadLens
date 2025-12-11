@@ -129,7 +129,7 @@ fun SettingsScreen(
             )
         },
         bottomBar = {
-            Surface(color = Color(0xFFF6F6F8), shadowElevation = 6.dp) {
+            Surface(shadowElevation = 6.dp) {
                 Button(
                     onClick = ::saveAndClose,
                     enabled = hasChanges,
@@ -146,7 +146,6 @@ fun SettingsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
                 .padding(inner)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
@@ -276,7 +275,7 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(IntrinsicSize.Min) // Required for vertical dividers/equal heights
-                            .background(Color.White, RoundedCornerShape(12.dp)),
+                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
                         options.forEachIndexed { index, option ->
@@ -290,7 +289,7 @@ fun SettingsScreen(
                             )
                             if (index < options.lastIndex) {
                                 Divider(
-                                    color = Color(0xFFE0E0E0),
+                                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
                                     modifier = Modifier
                                         .fillMaxHeight()
                                         .width(1.dp)
@@ -333,7 +332,7 @@ private fun RowScope.SensitivityOption(
     }
 
     Surface(
-        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
         contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
         shape = cornerShape,
         tonalElevation = 0.dp,
@@ -356,7 +355,7 @@ private fun RowScope.SensitivityOption(
 private fun SettingCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xFFF7F7FA),
+        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
