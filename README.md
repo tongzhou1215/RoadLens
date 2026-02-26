@@ -1,5 +1,4 @@
-#🚗 RoadLens – Mobile Dash Cam App
-
+# RoadLens 🚗  
 Android-Based Collision Detection & Emergency Alert System
 
 ## 📌 Project Overview
